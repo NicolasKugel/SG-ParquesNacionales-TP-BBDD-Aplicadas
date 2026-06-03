@@ -1,7 +1,7 @@
-// Use DBML to define your database structure
-// Docs: https://dbml.dbdiagram.io/docs
+--Use DBML to define your database structure
+--Docs: https://dbml.dbdiagram.io/docs
 
-// Módulo A - Parques
+
 Table Parque {
   id integer [primary key]
   nombre varchar
@@ -14,7 +14,7 @@ Table Parque {
 }
 
 
-//Módulo B - Ventas
+
 Table PrecioEntrada {
   id integer [primary key]
   parque_id integer [Ref: > Parque.id]
@@ -44,7 +44,7 @@ Table LineaVenta {
 }
 
 
-// Módulo C - Atracciones
+
 Table Atraccion {
   id integer [primary key]
   parque_id integer [Ref: > Parque.id]
@@ -75,7 +75,7 @@ Table Visitante {
   dni varchar
 }
 
-// Módulo E - Personal
+
 Table Guia {
   id integer [primary key]
   nombre varchar
@@ -120,7 +120,7 @@ Table AsignacionGuardaParque {
 }
 
 
-// Módulo F - Concesiones
+
 Table Concesion {
   id integer [primary key]
   empresa_id integer [Ref: > Empresa.id]
