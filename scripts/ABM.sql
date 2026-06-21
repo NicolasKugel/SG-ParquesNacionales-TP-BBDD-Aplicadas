@@ -9,7 +9,7 @@ USE TPBDG5;
 GO
 
 -- ==========================================
--- ABM: PARQUE (Contiene Validaciones 1 y 2)
+-- ABM: PARQUE
 -- ==========================================
 CREATE OR ALTER PROCEDURE sp_ABM_Parque
     @Accion CHAR(1), -- 'I' (Insert), 'U' (Update), 'D' (Delete)
@@ -23,19 +23,19 @@ CREATE OR ALTER PROCEDURE sp_ABM_Parque
 AS
 BEGIN
     SET NOCOUNT ON;
-    DECLARE @Errores NVARCHAR(MAX) = '';
+    DECLARE @Errores NVARCHAR(255) = '';
 
     IF @Accion IN ('I', 'U')
     BEGIN
-        -- Validación 1: El precio de entrada no puede ser negativo
+        -- Validación: El precio de entrada no puede ser negativo
         IF @precio_entrada < 0
             SET @Errores = @Errores + 'ERROR: El precio de entrada no puede ser un valor negativo.' + CHAR(13);
 
-        -- Validación 2: La superficie medida en hectáreas debe ser estrictamente mayor a cero
+        -- Validación: La superficie medida en hectáreas debe ser estrictamente mayor a cero
         IF @superficie_ha <= 0
             SET @Errores = @Errores + 'ERROR: La superficie del parque debe ser mayor a 0 hectáreas.' + CHAR(13);
 
-        -- Validación 3: Campos de texto obligatorios vacíos
+        -- Validación: Campos de texto obligatorios vacíos
         IF ISNULL(@nombre, '') = '' OR ISNULL(@codigo_oficial, '') = ''
             SET @Errores = @Errores + 'ERROR: El código oficial y el nombre del parque son campos obligatorios.' + CHAR(13);
     END
@@ -68,7 +68,7 @@ END;
 GO
 
 -- ==========================================
--- ABM: GUIA (Contiene Validaciones 4 y 5)
+-- ABM: GUIA
 -- ==========================================
 CREATE OR ALTER PROCEDURE sp_ABM_Guia
     @Accion CHAR(1),
@@ -83,15 +83,15 @@ CREATE OR ALTER PROCEDURE sp_ABM_Guia
 AS
 BEGIN
     SET NOCOUNT ON;
-    DECLARE @Errores NVARCHAR(MAX) = '';
+    DECLARE @Errores NVARCHAR(255) = '';
 
     IF @Accion IN ('I', 'U')
     BEGIN
-        -- Validación 4: Nombre y apellido del personal no pueden ser nulos
+        -- Validación: Nombre y apellido del personal no pueden ser nulos
         IF ISNULL(@nombre, '') = '' OR ISNULL(@apellido, '') = ''
             SET @Errores = @Errores + 'ERROR: Nombre y Apellido del guía son campos obligatorios.' + CHAR(13);
 
-        -- Validación 5: Longitud mínima del DNI para evitar registros basura
+        -- Validación: Longitud mínima del DNI para evitar registros basura
         IF LEN(ISNULL(@dni, '')) < 6
             SET @Errores = @Errores + 'ERROR: El DNI proporcionado no tiene una longitud válida (mínimo 6 caracteres).' + CHAR(13);
     END
@@ -122,7 +122,7 @@ END;
 GO
 
 -- ==========================================
--- ABM: CONCESION (Contiene Validaciones 6, 7 y 8)
+-- ABM: CONCESION
 -- ==========================================
 CREATE OR ALTER PROCEDURE sp_ABM_Concesion
     @Accion CHAR(1),
@@ -135,19 +135,19 @@ CREATE OR ALTER PROCEDURE sp_ABM_Concesion
 AS
 BEGIN
     SET NOCOUNT ON;
-    DECLARE @Errores NVARCHAR(MAX) = '';
+    DECLARE @Errores NVARCHAR(255) = '';
 
     IF @Accion IN ('I', 'U')
     BEGIN
-        -- Validación 6: La fecha de finalización contractual debe ser posterior a la fecha de inicio
+        -- Validación: La fecha de finalización contractual debe ser posterior a la fecha de inicio
         IF @fecha_fin <= @fecha_inicio
             SET @Errores = @Errores + 'ERROR: La fecha de fin del contrato de concesión debe ser estrictamente posterior a la de inicio.' + CHAR(13);
 
-        -- Validación 7: El canon mensual a cobrar debe ser positivo
+        -- Validación: El canon mensual a cobrar debe ser positivo
         IF @canon_mensual <= 0
             SET @Errores = @Errores + 'ERROR: El monto del canon mensual debe ser un valor mayor a cero.' + CHAR(13);
 
-        -- Validación 8: Integridad relacional previa de entidades existentes
+        -- Validación: Integridad relacional previa de entidades existentes
         IF NOT EXISTS (SELECT 1 FROM Empresa WHERE id = @empresa_id)
             SET @Errores = @Errores + 'ERROR: La Empresa asociada no existe en los registros del sistema.' + CHAR(13);
 
@@ -181,14 +181,14 @@ END;
 GO
 
 -- ==========================================
--- ABM: TIPO VISITANTE Y MONEDA (Validaciones 9 y 10)
+-- ABM: TIPO VISITANTE Y MONEDA
 -- ==========================================
 CREATE OR ALTER PROCEDURE sp_ABM_TipoVisitante
     @Accion CHAR(1), @id INT = NULL, @descripcion VARCHAR(255) = NULL, @descuento INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
-    -- Validación 9: Descuento acotado de manera porcentual realista (0% a 100%)
+    -- Validación: Descuento acotado de manera porcentual realista (0% a 100%)
     IF @Accion IN ('I', 'U') AND (@descuento < 0 OR @descuento > 100)
     BEGIN
         RAISERROR('ERROR: El porcentaje de descuento asignado debe encontrarse en el rango de 0 a 100.', 16, 1);
@@ -206,7 +206,7 @@ CREATE OR ALTER PROCEDURE sp_ABM_Moneda
 AS
 BEGIN
     SET NOCOUNT ON;
-    -- Validación 10: La cotización de cambio de moneda internacional no puede ser nula ni negativa
+    -- Validación: La cotización de cambio de moneda internacional no puede ser nula ni negativa
     IF @Accion IN ('I', 'U') AND @cotizacion <= 0
     BEGIN
         RAISERROR('ERROR: La cotización de la moneda debe ser un valor de cambio superior a cero.', 16, 1);
