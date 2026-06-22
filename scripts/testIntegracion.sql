@@ -1,5 +1,5 @@
 /*******************************************************************************
-Fecha: 15/06/2026
+Fecha: 22/06/2026
 Integrantes: [Nicolás Kugel, Facundo Gargiulo, Valentin Martinez]
 Descripción: Script 4/4 - Batería de Pruebas Funcionales (Testing Unitario e Integración).
              Cubre flujos de éxito con evidencia y flujos erróneos de validación.
@@ -14,25 +14,26 @@ GO
 
 -- 1. Insertar Datos Maestros Iniciales mediante SPs parametrizados
 EXEC sp_ABM_TipoVisitante 'I', NULL, 'Residente Nacional', 50; -- 50% Bonificación
-EXEC sp_ABM_Moneda 'I', NULL, 'Peso Argentino', 'ARS', 1.0000;
 
 -- 2. Ejecutar Upsert de Importación Externa para dar de alta parques oficiales públicos
-EXEC sp_ImportarDatosParqueUpsert 'P-NAL-001', 'Parque Nacional Iguazú', 'Misiones', 5000.00, 67720.00, 'PN';
+EXEC sp_ImportarDatosParqueUpsert 'Parque Nacional Iguazú', 'Misiones', 5000.00, 67720.00, 'PN';
+
+EXEC sp_ABM_Entrada 'I', NULL, 5000.00, 1;
 
 -- 3. Cargar un Visitante apto para el negocio
-INSERT INTO Visitante (tipo_visitante_id, nombre, apellido, dni)
-VALUES (1, 'Juan', 'Pérez', '35123456');
+INSERT INTO Visitante (nombre, apellido, dni)
+VALUES ('Juan', 'Pérez', '35123456');
 
 -- [EVIDENCIA 1]: Verificar el estado actual del Parque y el Visitante insertados
-SELECT * FROM Parque WHERE codigo_oficial = 'P-NAL-001';
+SELECT * FROM Parque WHERE nombre = 'Parque Nacional Iguazú';
+SELECT * FROM Entrada WHERE parque_id = 1;
 SELECT * FROM Visitante WHERE dni = '35123456';
 
 -- 4. Ejecutar el Proceso Complejo Transaccional de Venta de Entradas
--- Compra 2 entradas generales para el parque ID 1 (Iguazú), usando moneda 1
 EXEC sp_ProcesarVentaTicket
-    @moneda_id = 1, @punto_venta = 10, @numero = 9991,
+    @punto_venta = 10, @numero = 9991,
     @forma_pago = 'Tarjeta de Débito', @visitante_id = 1,
-    @parque_id = 1, @atraccion_id = NULL, @cantidad = 2;
+    @tipo_visitante_id = 1, @entrada_id = 1, @atraccion_id = NULL, @cantidad = 2;
 
 -- [EVIDENCIA 2]: Comprobación del impacto financiero integrado de la transacción
 SELECT * FROM Venta;
@@ -51,7 +52,6 @@ BEGIN TRY
     -- Se fuerzan parámetros inválidos para detonar las validaciones acumuladas 1 y 2
     EXEC sp_ABM_Parque
         @Accion = 'I',
-        @codigo_oficial = 'ERR-01',
         @nombre = '', -- Detonará error de campo obligatorio
         @ubicacion = 'Destino Prueba',
         @precio_entrada = -150.00, -- Detonará error de precio
@@ -65,23 +65,21 @@ END CATCH;
 GO
 
 PRINT '---------------------------------------------------------';
-PRINT 'TEST DE ERROR 2: Asignación de Guía con Credencial Habilitante Vencida';
+PRINT 'TEST DE ERROR 2: Asignación de Guía Inexistente a una Atracción';
 PRINT '---------------------------------------------------------';
 
--- Insertamos un guía cuya autorización expiró en el pasado
-INSERT INTO Guia (nombre, apellido, dni, titulo, tipo_habilitacion, especialidad, fecha_vigencia)
-VALUES ('Carlos', 'Gómez', '22987654', 'Lic. Biología', 'Provincial', 'Aves', '2025-01-01');
+INSERT INTO Guia (nombre, apellido, dni, titulo, tipo_habilitacion, especialidad)
+VALUES ('Carlos', 'Gómez', '22987654', 'Lic. Biología', 'Provincial', 'Aves');
 
 -- Insertamos una atracción de prueba vinculada al parque creado en el escenario A
 INSERT INTO Atraccion (parque_id, nombre, descripcion, duracion, cupo_maximo, costo)
-VALUES (1, 'Garganta del Diablo', 'Paseo en pasarelas superiores', 120, 50, 1500.00);
+VALUES (1, 'Garganta del Diablo', 'Paseo en pasarelas superiores', '02:00:00', 50, 1500.00);
 
 BEGIN TRY
-    -- Intentamos agendar al guía en una fecha del año 2026 (cuando su vigencia ya expiró en 2025)
     EXEC sp_AsignarGuiaAtraccion
         @atraccion_id = 1,
-        @guia_id = 1,
-        @fecha_asignacion = '2026-06-15',
+        @guia_id = 9999,
+        @fecha_asignacion = '2026-06-22',
         @turno = 'Mañana';
 END TRY
 BEGIN CATCH

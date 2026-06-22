@@ -1,8 +1,8 @@
 /*******************************************************************************
-Fecha: 15/06/2026
+Fecha: 22/06/2026
 Integrantes: [Nicolás Kugel, Facundo Gargiulo, Valentin Martinez]
 Descripción: Script 2/4 - Procedimientos Almacenados para operaciones ABM.
-             Incluye la lógica de validación acumulativa de 10 condiciones de negocio.
+             Incluye la lógica de validación acumulativa de condiciones de negocio.
 *******************************************************************************/
 
 USE TPBDG5;
@@ -14,7 +14,6 @@ GO
 CREATE OR ALTER PROCEDURE sp_ABM_Parque
     @Accion CHAR(1), -- 'I' (Insert), 'U' (Update), 'D' (Delete)
     @id INT = NULL,
-    @codigo_oficial VARCHAR(50) = NULL,
     @nombre VARCHAR(255) = NULL,
     @ubicacion VARCHAR(255) = NULL,
     @precio_entrada DECIMAL(18,2) = NULL,
@@ -36,8 +35,8 @@ BEGIN
             SET @Errores = @Errores + 'ERROR: La superficie del parque debe ser mayor a 0 hectáreas.' + CHAR(13);
 
         -- Validación: Campos de texto obligatorios vacíos
-        IF ISNULL(@nombre, '') = '' OR ISNULL(@codigo_oficial, '') = ''
-            SET @Errores = @Errores + 'ERROR: El código oficial y el nombre del parque son campos obligatorios.' + CHAR(13);
+        IF ISNULL(@nombre, '') = ''
+            SET @Errores = @Errores + 'ERROR: El nombre del parque es un campo obligatorio.' + CHAR(13);
     END
 
     -- Despacho unificado de errores si existen
@@ -50,13 +49,13 @@ BEGIN
     -- Ejecución de la operación si pasó las validaciones
     IF @Accion = 'I'
     BEGIN
-        INSERT INTO Parque (codigo_oficial, nombre, ubicacion, precio_entrada, superficie_ha, tipo_parque)
-        VALUES (@codigo_oficial, @nombre, @ubicacion, @precio_entrada, @superficie_ha, @tipo_parque);
+        INSERT INTO Parque (nombre, ubicacion, precio_entrada, superficie_ha, tipo_parque)
+        VALUES (@nombre, @ubicacion, @precio_entrada, @superficie_ha, @tipo_parque);
     END
     ELSE IF @Accion = 'U'
     BEGIN
         UPDATE Parque
-        SET codigo_oficial = @codigo_oficial, nombre = @nombre, ubicacion = @ubicacion,
+        SET nombre = @nombre, ubicacion = @ubicacion,
             precio_entrada = @precio_entrada, superficie_ha = @superficie_ha, tipo_parque = @tipo_parque
         WHERE id = @id;
     END
@@ -78,8 +77,7 @@ CREATE OR ALTER PROCEDURE sp_ABM_Guia
     @dni VARCHAR(50) = NULL,
     @titulo VARCHAR(255) = NULL,
     @tipo_habilitacion VARCHAR(255) = NULL,
-    @especialidad VARCHAR(255) = NULL,
-    @fecha_vigencia DATE = NULL
+    @especialidad VARCHAR(255) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -104,14 +102,14 @@ BEGIN
 
     IF @Accion = 'I'
     BEGIN
-        INSERT INTO Guia(nombre, apellido, dni, titulo, tipo_habilitacion, especialidad, fecha_vigencia)
-        VALUES (@nombre, @apellido, @dni, @titulo, @tipo_habilitacion, @especialidad, @fecha_vigencia);
+        INSERT INTO Guia(nombre, apellido, dni, titulo, tipo_habilitacion, especialidad)
+        VALUES (@nombre, @apellido, @dni, @titulo, @tipo_habilitacion, @especialidad);
     END
     ELSE IF @Accion = 'U'
     BEGIN
         UPDATE Guia
         SET nombre = @nombre, apellido = @apellido, dni = @dni, titulo = @titulo,
-            tipo_habilitacion = @tipo_habilitacion, especialidad = @especialidad, fecha_vigencia = @fecha_vigencia
+            tipo_habilitacion = @tipo_habilitacion, especialidad = @especialidad
         WHERE id = @id;
     END
     ELSE IF @Accion = 'D'
@@ -181,7 +179,7 @@ END;
 GO
 
 -- ==========================================
--- ABM: TIPO VISITANTE Y MONEDA
+-- ABM: TIPO VISITANTE
 -- ==========================================
 CREATE OR ALTER PROCEDURE sp_ABM_TipoVisitante
     @Accion CHAR(1), @id INT = NULL, @descripcion VARCHAR(255) = NULL, @descuento INT = NULL
@@ -201,20 +199,58 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE sp_ABM_Moneda
-    @Accion CHAR(1), @id INT = NULL, @descripcion VARCHAR(255) = NULL, @simbolo VARCHAR(4) = NULL, @cotizacion DECIMAL(18,4) = NULL
+CREATE OR ALTER PROCEDURE sp_ABM_Entrada
+    @Accion CHAR(1), @id INT = NULL, @precio_entrada DECIMAL(18,2) = NULL, @parque_id INT = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
-    -- Validación: La cotización de cambio de moneda internacional no puede ser nula ni negativa
-    IF @Accion IN ('I', 'U') AND @cotizacion <= 0
+    DECLARE @Errores NVARCHAR(255) = '';
+
+    IF @Accion IN ('I', 'U')
     BEGIN
-        RAISERROR('ERROR: La cotización de la moneda debe ser un valor de cambio superior a cero.', 16, 1);
+        IF @precio_entrada < 0
+            SET @Errores = @Errores + 'ERROR: El precio de la entrada no puede ser un valor negativo.' + CHAR(13);
+
+        IF NOT EXISTS (SELECT 1 FROM Parque WHERE id = @parque_id)
+            SET @Errores = @Errores + 'ERROR: El Parque asociado a la entrada no existe.' + CHAR(13);
+    END
+
+    IF LEN(@Errores) > 0
+    BEGIN
+        RAISERROR(@Errores, 16, 1);
         RETURN;
     END
 
-    IF @Accion = 'I' INSERT INTO Moneda(descripcion, simbolo, cotizacion) VALUES (@descripcion, @simbolo, @cotizacion);
-    IF @Accion = 'U' UPDATE Moneda SET descripcion = @descripcion, simbolo = @simbolo, cotizacion = @cotizacion WHERE id = @id;
-    IF @Accion = 'D' DELETE FROM Moneda WHERE id = @id;
+    IF @Accion = 'I' INSERT INTO Entrada(precio_entrada, parque_id) VALUES (@precio_entrada, @parque_id);
+    IF @Accion = 'U' UPDATE Entrada SET precio_entrada = @precio_entrada, parque_id = @parque_id WHERE id = @id;
+    IF @Accion = 'D' DELETE FROM Entrada WHERE id = @id;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE sp_ABM_Empresa
+    @Accion CHAR(1), @id INT = NULL, @razon_social VARCHAR(255) = NULL, @cuit VARCHAR(255) = NULL, @tipo_actividad VARCHAR(255) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @Errores NVARCHAR(255) = '';
+
+    IF @Accion IN ('I', 'U')
+    BEGIN
+        IF ISNULL(@razon_social, '') = '' OR ISNULL(@cuit, '') = ''
+            SET @Errores = @Errores + 'ERROR: La Razón Social y el CUIT son campos obligatorios.' + CHAR(13);
+
+        IF LEN(ISNULL(@cuit, '')) < 11
+            SET @Errores = @Errores + 'ERROR: El CUIT proporcionado no tiene una longitud válida (mínimo 11 caracteres).' + CHAR(13);
+    END
+
+    IF LEN(@Errores) > 0
+    BEGIN
+        RAISERROR(@Errores, 16, 1);
+        RETURN;
+    END
+
+    IF @Accion = 'I' INSERT INTO Empresa(razon_social, cuit, tipo_actividad) VALUES (@razon_social, @cuit, @tipo_actividad);
+    IF @Accion = 'U' UPDATE Empresa SET razon_social = @razon_social, cuit = @cuit, tipo_actividad = @tipo_actividad WHERE id = @id;
+    IF @Accion = 'D' DELETE FROM Empresa WHERE id = @id;
 END;
 GO
