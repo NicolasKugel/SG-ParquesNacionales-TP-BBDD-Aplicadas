@@ -14,7 +14,7 @@ GO
 CREATE OR ALTER PROCEDURE sp_ProcesarVentaTicket
     @punto_venta       INT,
     @numero            INT,
-    @forma_pago        VARCHAR(255),
+    @forma_pago        VARCHAR(50),
     @visitante_id      INT,
     @tipo_visitante_id INT,
     @entrada_id        INT = NULL,
@@ -23,6 +23,12 @@ CREATE OR ALTER PROCEDURE sp_ProcesarVentaTicket
 AS
 BEGIN
     SET NOCOUNT ON;
+
+    IF @forma_pago NOT IN ('Efectivo', 'Tarjeta de débito', 'Tarjeta de crédito', 'Transferencia')
+    BEGIN
+        RAISERROR('ERROR: La forma de pago debe ser Efectivo, Tarjeta de débito, Tarjeta de crédito o Transferencia.', 16, 1);
+        RETURN;
+    END
 
     BEGIN TRY
         BEGIN TRANSACTION;
@@ -67,20 +73,24 @@ CREATE OR ALTER PROCEDURE sp_AsignarGuiaAtraccion
     @atraccion_id     INT,
     @guia_id          INT,
     @fecha_asignacion DATE,
-    @turno            VARCHAR(255)
+    @turno            VARCHAR(10)
 AS
 BEGIN
     SET NOCOUNT ON;
+    DECLARE @Errores NVARCHAR(MAX) = '';
 
     IF NOT EXISTS (SELECT 1 FROM Personal.Guia WHERE id = @guia_id)
-    BEGIN
-        RAISERROR('ERROR: El guía indicado no existe en los registros del sistema.', 16, 1);
-        RETURN;
-    END
+        SET @Errores = @Errores + 'ERROR: El guía indicado no existe en los registros del sistema.' + CHAR(13);
 
     IF NOT EXISTS (SELECT 1 FROM Parques.Atraccion WHERE id = @atraccion_id)
+        SET @Errores = @Errores + 'ERROR: La atracción indicada no existe en los registros del sistema.' + CHAR(13);
+
+    IF ISNULL(@turno, '') NOT IN ('Mañana', 'Tarde', 'Noche')
+        SET @Errores = @Errores + 'ERROR: El turno debe ser Mañana, Tarde o Noche.' + CHAR(13);
+
+    IF LEN(@Errores) > 0
     BEGIN
-        RAISERROR('ERROR: La atracción indicada no existe en los registros del sistema.', 16, 1);
+        RAISERROR(@Errores, 16, 1);
         RETURN;
     END
 
@@ -107,7 +117,7 @@ BEGIN
         DECLARE @CanonPautado DECIMAL(18,2);
         SELECT @CanonPautado = canon_mensual FROM Concesiones.Concesion WHERE id = @concesion_id;
 
-        DECLARE @EstadoPago VARCHAR(50) = 'Pagado';
+        DECLARE @EstadoPago VARCHAR(10) = 'Pagado';
         IF @monto_abonado < @CanonPautado SET @EstadoPago = 'Atrasado';
 
         INSERT INTO Concesiones.PagoConcesion (fecha_pago, periodo, estado, total, concesion_id)
@@ -126,9 +136,9 @@ GO
 -- LÓGICA 4: IMPORTACIÓN DE PARQUES DESDE ARCHIVOS EXTERNOS (UPSERT)
 -- ==========================================
 CREATE OR ALTER PROCEDURE sp_ImportarDatosParqueUpsert
-    @nombre        VARCHAR(255),
+    @nombre        VARCHAR(100),
     @Codigo        VARCHAR(20),
-    @ubicacion     VARCHAR(255),
+    @ubicacion     VARCHAR(200),
     @superficie_ha DECIMAL(12,2),
     @tipo_parque   CHAR(2)
 AS

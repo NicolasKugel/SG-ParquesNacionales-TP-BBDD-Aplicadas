@@ -20,8 +20,8 @@ CREATE OR ALTER PROCEDURE sp_ABM_Parque
     @Accion        CHAR(1),
     @id            INT           = NULL,
     @Codigo        VARCHAR(20)   = NULL,
-    @nombre        VARCHAR(255)  = NULL,
-    @ubicacion     VARCHAR(255)  = NULL,
+    @nombre        VARCHAR(100)  = NULL,
+    @ubicacion     VARCHAR(200)  = NULL,
     @superficie_ha DECIMAL(12,2) = NULL,
     @tipo_parque   CHAR(2)       = NULL
 AS
@@ -66,12 +66,12 @@ GO
 CREATE OR ALTER PROCEDURE sp_ABM_Guia
     @Accion            CHAR(1),
     @id                INT          = NULL,
-    @nombre            VARCHAR(255) = NULL,
-    @apellido          VARCHAR(255) = NULL,
-    @dni               VARCHAR(50)  = NULL,
-    @titulo            VARCHAR(255) = NULL,
-    @tipo_habilitacion VARCHAR(255) = NULL,
-    @especialidad      VARCHAR(255) = NULL
+    @nombre            VARCHAR(100) = NULL,
+    @apellido          VARCHAR(100) = NULL,
+    @dni               VARCHAR(15)  = NULL,
+    @titulo            VARCHAR(150) = NULL,
+    @tipo_habilitacion VARCHAR(100) = NULL,
+    @especialidad      VARCHAR(100) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -161,7 +161,7 @@ GO
 CREATE OR ALTER PROCEDURE sp_ABM_TipoVisitante
     @Accion      CHAR(1),
     @id          INT          = NULL,
-    @descripcion VARCHAR(255) = NULL,
+    @descripcion VARCHAR(100) = NULL,
     @descuento   INT          = NULL
 AS
 BEGIN
@@ -228,9 +228,9 @@ GO
 CREATE OR ALTER PROCEDURE sp_ABM_Empresa
     @Accion         CHAR(1),
     @id             INT          = NULL,
-    @razon_social   VARCHAR(255) = NULL,
-    @cuit           VARCHAR(255) = NULL,
-    @tipo_actividad VARCHAR(255) = NULL
+    @razon_social   VARCHAR(150) = NULL,
+    @cuit           VARCHAR(13)  = NULL,
+    @tipo_actividad VARCHAR(100) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -263,9 +263,9 @@ GO
 CREATE OR ALTER PROCEDURE sp_ABM_GuardaParque
     @Accion   CHAR(1),
     @id       INT          = NULL,
-    @nombre   VARCHAR(255) = NULL,
-    @apellido VARCHAR(255) = NULL,
-    @dni      VARCHAR(50)  = NULL,
+    @nombre   VARCHAR(100) = NULL,
+    @apellido VARCHAR(100) = NULL,
+    @dni      VARCHAR(15)  = NULL,
     @estado   INT          = NULL  -- 1: Activo, 0: Inactivo
 AS
 BEGIN
@@ -313,7 +313,7 @@ CREATE OR ALTER PROCEDURE sp_ABM_AsignacionGuardaParque
     @id               INT          = NULL,
     @fecha_inicio     DATE         = NULL,
     @fecha_fin        DATE         = NULL,
-    @motivo_egreso    VARCHAR(255) = NULL,
+    @motivo_egreso    VARCHAR(200) = NULL,
     @guarda_parque_id INT          = NULL,
     @parque_id        INT          = NULL
 AS
@@ -361,8 +361,8 @@ GO
 CREATE OR ALTER PROCEDURE sp_ABM_Atraccion
     @Accion      CHAR(1),
     @id          INT           = NULL,
-    @nombre      VARCHAR(255)  = NULL,
-    @descripcion VARCHAR(255)  = NULL,
+    @nombre      VARCHAR(100)  = NULL,
+    @descripcion VARCHAR(500)  = NULL,
     @duracion    TIME          = NULL,
     @cupo_maximo INT           = NULL,
     @costo       DECIMAL(18,2) = NULL,
@@ -412,9 +412,9 @@ GO
 CREATE OR ALTER PROCEDURE sp_ABM_Visitante
     @Accion   CHAR(1),
     @id       INT          = NULL,
-    @nombre   VARCHAR(255) = NULL,
-    @apellido VARCHAR(255) = NULL,
-    @dni      VARCHAR(255) = NULL
+    @nombre   VARCHAR(100) = NULL,
+    @apellido VARCHAR(100) = NULL,
+    @dni      VARCHAR(15)  = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -456,7 +456,7 @@ CREATE OR ALTER PROCEDURE sp_ABM_AtraccionGuia
     @Accion           CHAR(1),           -- 'U' Actualizar | 'D' Eliminar
     @id               INT          = NULL,
     @fecha_asignacion DATE         = NULL,
-    @turno            VARCHAR(255) = NULL,
+    @turno            VARCHAR(10)  = NULL,
     @atraccion_id     INT          = NULL,
     @guia_id          INT          = NULL
 AS
@@ -469,8 +469,8 @@ BEGIN
         IF NOT EXISTS (SELECT 1 FROM Personal.AtraccionGuia WHERE id = @id)
             SET @Errores = @Errores + 'ERROR: La asignación guía-atracción indicada no existe en el sistema.' + CHAR(13);
 
-        IF ISNULL(@turno, '') = ''
-            SET @Errores = @Errores + 'ERROR: El turno de la asignación no puede estar vacío.' + CHAR(13);
+        IF ISNULL(@turno, '') NOT IN ('Mañana', 'Tarde', 'Noche')
+            SET @Errores = @Errores + 'ERROR: El turno debe ser Mañana, Tarde o Noche.' + CHAR(13);
 
         IF NOT EXISTS (SELECT 1 FROM Parques.Atraccion WHERE id = @atraccion_id)
             SET @Errores = @Errores + 'ERROR: La atracción indicada no existe en el sistema.' + CHAR(13);
@@ -508,7 +508,7 @@ CREATE OR ALTER PROCEDURE sp_ABM_PagoConcesion
     @id           INT           = NULL,
     @fecha_pago   DATE          = NULL,
     @periodo      DATE          = NULL,
-    @estado       VARCHAR(50)   = NULL,   -- 'Pagado' | 'Atrasado' | 'Pendiente'
+    @estado       VARCHAR(10)   = NULL,   -- 'Pagado' | 'Atrasado' | 'Pendiente'
     @total        DECIMAL(18,2) = NULL,
     @concesion_id INT           = NULL
 AS
