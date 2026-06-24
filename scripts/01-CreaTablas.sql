@@ -7,14 +7,14 @@ GO
 --Atenti con la numeracion de archivos
 
 CREATE TABLE Concesiones.Empresa (
-  id int PRIMARY KEY,
+  id int IDENTITY(1,1) PRIMARY KEY,
   razon_social varchar(255) NOT NULL,
   cuit varchar(255) NOT NULL UNIQUE,
   tipo_actividad varchar(255) NOT NULL,
 );
 
 CREATE TABLE Concesiones.Concesion (
-  id int PRIMARY KEY,
+  id int IDENTITY(1,1) PRIMARY KEY,
   fecha_inicio date NOT NULL,
   fecha_fin date NOT NULL,
   canon_mensual decimal(18,2) NOT NULL,
@@ -23,7 +23,7 @@ CREATE TABLE Concesiones.Concesion (
 );
 
 CREATE TABLE Concesiones.PagoConcesion (
-  id int PRIMARY KEY,
+  id int IDENTITY(1,1) PRIMARY KEY,
   fecha_pago date NULL, -- Día en que se realizó el pago
   periodo date NOT NULL, -- Período de la concesión a pagar
   estado varchar(255) NOT NULL,
@@ -32,14 +32,14 @@ CREATE TABLE Concesiones.PagoConcesion (
 );
 
 CREATE TABLE Parques.Entrada (
-  id int PRIMARY KEY,
+  id int IDENTITY(1,1) PRIMARY KEY,
   precio_entrada decimal(18,2) NOT NULL,
   parque_id int NOT NULL,
   fecha_desde date NOT NULL
 );
 
 CREATE TABLE Parques.Atraccion (
-  id int PRIMARY KEY,
+  id int IDENTITY(1,1) PRIMARY KEY,
   nombre varchar(255) NOT NULL,
   descripcion varchar(255) NULL,
   duracion time NOT NULL,
@@ -49,7 +49,7 @@ CREATE TABLE Parques.Atraccion (
 );
 
 CREATE TABLE Parques.Parque (
-  id int PRIMARY KEY,
+  id int IDENTITY(1,1) PRIMARY KEY,
   Codigo varchar(20) NOT NULL,
   nombre varchar(255) NOT NULL,
   ubicacion varchar(255) NOT NULL,
@@ -59,7 +59,7 @@ CREATE TABLE Parques.Parque (
 );
 
 CREATE TABLE Personal.GuardaParque (
-  id int PRIMARY KEY,
+  id int IDENTITY(1,1) PRIMARY KEY,
   nombre varchar(255) NOT NULL,
   apellido varchar(255) NOT NULL,
   dni varchar(255) NOT NULL UNIQUE,
@@ -67,7 +67,7 @@ CREATE TABLE Personal.GuardaParque (
 );
 
 CREATE TABLE Personal.AsignacionGuardaParque (
-  id int PRIMARY KEY,
+  id int IDENTITY(1,1) PRIMARY KEY,
   fecha_inicio date NOT NULL,
   fecha_fin date NULL,
   motivo_egreso varchar(255) NULL,
@@ -76,7 +76,7 @@ CREATE TABLE Personal.AsignacionGuardaParque (
 );
 
 CREATE TABLE Personal.Guia (
-  id int PRIMARY KEY,
+  id int IDENTITY(1,1) PRIMARY KEY,
   nombre varchar(255) NOT NULL,
   apellido varchar(255) NOT NULL,
   dni varchar(255) NOT NULL UNIQUE,
@@ -86,7 +86,7 @@ CREATE TABLE Personal.Guia (
 );
 
 CREATE TABLE Personal.AtraccionGuia (
-  id int PRIMARY KEY,
+  id int IDENTITY(1,1) PRIMARY KEY,
   fecha_asignacion date NOT NULL,
   turno varchar(255) NOT NULL,
   atraccion_id int NOT NULL,
@@ -94,20 +94,20 @@ CREATE TABLE Personal.AtraccionGuia (
 );
 
 CREATE TABLE Ventas.Visitante (
-  id int PRIMARY KEY,
+  id int IDENTITY(1,1) PRIMARY KEY,
   nombre varchar(255) NOT NULL,
   apellido varchar(255) NOT NULL,
   dni varchar(255) NOT NULL UNIQUE,
 );
 
 CREATE TABLE Ventas.TipoVisitante (
-  id int PRIMARY KEY,
+  id int IDENTITY(1,1) PRIMARY KEY,
   descripcion varchar(255),
   descuento int,
 );
 
 CREATE TABLE Ventas.Venta (
-  id int PRIMARY KEY,
+  id int IDENTITY(1,1) PRIMARY KEY,
   punto_venta int NOT NULL,
   numero int NOT NULL,
   fecha date NOT NULL,
@@ -117,7 +117,7 @@ CREATE TABLE Ventas.Venta (
 );
 
 CREATE TABLE Ventas.LineaVenta (
-  id int PRIMARY KEY,
+  id int IDENTITY(1,1) PRIMARY KEY,
   cantidad int NOT NULL,
   precio_unitario decimal(18,2) NOT NULL,
   subtotal decimal(18,2) NOT NULL,
