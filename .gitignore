@@ -1,0 +1,5 @@
+*.ssmssln
+*.ssmssqlproj
+*.user
+.vs/
+*.sln
