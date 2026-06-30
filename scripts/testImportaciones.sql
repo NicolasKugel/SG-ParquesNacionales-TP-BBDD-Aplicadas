@@ -5,9 +5,16 @@ Descripcion: Pruebas del modulo de importaciones masivas y consumo de API.
              Requiere ejecutar antes: 00, 01, 02, 03 y 04-Importaciones.sql.
 
 IMPORTANTE: ejecutar en modo SQLCMD para usar la variable RutaImportaciones.
+
+La ruta relativa .\importaciones se resuelve desde el contexto del servicio de
+SQL Server, no necesariamente desde la ubicacion de este script.
+Si falla BULK INSERT por archivo no encontrado o permisos:
+1. Crear o identificar una carpeta accesible por SQL Server.
+2. Copiar ahi el directorio importaciones completo sin modificar los CSV.
+3. Ajustar RutaImportaciones a esa ubicacion, por ejemplo C:\BBDD\importaciones.
 *******************************************************************************/
 
-:setvar RutaImportaciones "C:\Users\nicol\OneDrive\Documentos\Universidad\BBDD aplicadas\EntregaTPBBDDAplicadas\SG-ParquesNacionales-TP-BBDD-Aplicadas\importaciones"
+:setvar RutaImportaciones ".\importaciones"
 
 USE TPBDG5;
 GO

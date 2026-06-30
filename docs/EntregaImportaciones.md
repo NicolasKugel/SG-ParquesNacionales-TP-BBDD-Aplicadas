@@ -78,16 +78,18 @@ Orden sugerido:
 :r scripts/testImportaciones.sql
 ```
 
-El archivo `scripts/testImportaciones.sql` usa SQLCMD mode y define la variable `RutaImportaciones` con la ruta local de la carpeta `importaciones`.
+El archivo `scripts/testImportaciones.sql` usa SQLCMD mode y define la variable `RutaImportaciones` con el valor por defecto `.\importaciones`.
 
 ## Requisitos Para BULK INSERT
 
 Los SP de importacion reciben `@NombreArchivo` y `@RutaArchivo`. La ruta debe ser accesible para el servicio de SQL Server, no solo para el usuario de Windows que ejecuta SSMS.
 
+La ruta relativa `.\importaciones` se resuelve desde el contexto del servicio de SQL Server. No necesariamente apunta a la carpeta del proyecto ni a la ubicacion del archivo `.sql` abierto.
+
 Si SQL Server no puede leer la ruta por permisos, OneDrive, espacios o acentos, hay dos alternativas:
 
 - Dar permisos de lectura sobre la carpeta al usuario del servicio SQL Server.
-- Usar una ruta local simple accesible por SQL Server y pasar esa ruta como parametro.
+- Copiar el directorio `importaciones` completo a una carpeta local simple accesible por SQL Server y ajustar `RutaImportaciones`, por ejemplo `C:\BBDD\importaciones`.
 
 Los archivos CSV no deben editarse antes de importarlos.
 
