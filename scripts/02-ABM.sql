@@ -108,7 +108,12 @@ GO
 -- ==========================================
 -- ABM: CONCESION
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_ABM_Concesion
+IF OBJECT_ID('dbo.sp_ABM_Concesion', 'P') IS NOT NULL
+BEGIN
+    DROP PROCEDURE dbo.sp_ABM_Concesion;
+END
+GO
+CREATE PROCEDURE sp_ABM_Concesion
     @Accion        CHAR(1),
     @id            INT           = NULL,
     @fecha_inicio  DATE          = NULL,

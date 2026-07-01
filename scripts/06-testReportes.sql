@@ -14,7 +14,7 @@ GO
 EXEC sp_ABM_Empresa
     @Accion = 'I',
     @razon_social = 'Concesiones del Sur S.A.',
-    @cuit = '30-12345678-9',
+    @cuit = '30-12345678e-9',
     @tipo_actividad = 'Gastronomía';
 
 EXEC sp_ABM_Concesion
