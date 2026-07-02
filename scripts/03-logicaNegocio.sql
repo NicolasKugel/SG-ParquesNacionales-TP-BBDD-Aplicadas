@@ -11,7 +11,7 @@ GO
 -- ==========================================
 -- LÓGICA 1: REGISTRACIÓN DE VENTA DE ENTRADAS COMPLETA
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_ProcesarVentaTicket
+CREATE OR ALTER PROCEDURE usp_ProcesarVentaTicket
     @punto_venta       INT,
     @numero            INT,
     @forma_pago        VARCHAR(50),
@@ -69,7 +69,7 @@ GO
 -- ==========================================
 -- LÓGICA 2: ASIGNACIÓN DE GUÍAS A ATRACCIONES
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_AsignarGuiaAtraccion
+CREATE OR ALTER PROCEDURE usp_AsignarGuiaAtraccion
     @atraccion_id     INT,
     @guia_id          INT,
     @fecha_asignacion DATE,
@@ -103,7 +103,7 @@ GO
 -- ==========================================
 -- LÓGICA 3: CONTROL Y PAGO DE CONCESIONES
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_RegistrarPagoConcesion
+CREATE OR ALTER PROCEDURE usp_RegistrarPagoConcesion
     @concesion_id  INT,
     @fecha_pago    DATE,
     @periodo       DATE,
@@ -135,7 +135,7 @@ GO
 -- ==========================================
 -- LÓGICA 4: IMPORTACIÓN DE PARQUES DESDE ARCHIVOS EXTERNOS (UPSERT)
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_ImportarDatosParqueUpsert
+CREATE OR ALTER PROCEDURE usp_ImportarDatosParqueUpsert
     @nombre        VARCHAR(100),
     @Codigo        VARCHAR(20),
     @ubicacion     VARCHAR(200),
