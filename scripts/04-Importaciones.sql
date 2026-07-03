@@ -1,26 +1,36 @@
 /*******************************************************************************
 Fecha: 30/06/2026
 Integrantes: [Nicolas Kugel, Facundo Gargiulo, Valentin Martinez]
-Descripcion: Modulo de importacion masiva desde archivos externos y consumo de API.
-             Incluye staging, control de lotes, errores, upsert y registro de API.
+Descripcion: Modulo de importacion CSV.
+             Usa lineas crudas, mapeo JSON, control de lotes, errores por fila
+             y upsert por entidad. El SQL dinamico queda acotado al BULK INSERT.
 *******************************************************************************/
 
 USE TPBDG5;
 GO
 
-IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = 'Importacion')
-BEGIN
-    EXEC('CREATE SCHEMA Importacion');
-END;
+DROP PROCEDURE IF EXISTS Importacion.usp_ImportarParqueCSV;
+DROP PROCEDURE IF EXISTS Importacion.usp_ImportarVisitanteCSV;
+DROP PROCEDURE IF EXISTS Importacion.usp_ImportarAtraccionCSV;
+DROP PROCEDURE IF EXISTS Importacion.usp_ImportarGuiaCSV;
+DROP PROCEDURE IF EXISTS Importacion.usp_ImportarGuardaParqueCSV;
+
+DROP PROCEDURE IF EXISTS Importacion.usp_CargarCsvLineasDesdeArchivo;
+DROP PROCEDURE IF EXISTS Importacion.usp_CargarExcelLineasDesdeArchivo;
+DROP FUNCTION IF EXISTS Importacion.fn_CantidadColumnasCsvLinea;
+
+DROP FUNCTION IF EXISTS Importacion.fn_ValorCsvLinea;
+DROP FUNCTION IF EXISTS Importacion.fn_ValorCsvGenerico;
+
+DROP PROCEDURE IF EXISTS Importacion.usp_ValidarLoteImportacionCSV;
+DROP PROCEDURE IF EXISTS Importacion.usp_FinalizarLoteImportacionCSV;
+DROP PROCEDURE IF EXISTS Importacion.usp_RegistrarErrorImportacion;
 GO
 
 IF OBJECT_ID('Importacion.ErrorImportacion', 'U') IS NOT NULL DROP TABLE Importacion.ErrorImportacion;
-IF OBJECT_ID('Importacion.ApiCotizacion', 'U') IS NOT NULL DROP TABLE Importacion.ApiCotizacion;
-IF OBJECT_ID('Importacion.ApiConsulta', 'U') IS NOT NULL DROP TABLE Importacion.ApiConsulta;
-IF OBJECT_ID('Importacion.VisitaTuristicaHistorica', 'U') IS NOT NULL DROP TABLE Importacion.VisitaTuristicaHistorica;
-IF OBJECT_ID('Importacion.AreaProtegidaJurisdiccion', 'U') IS NOT NULL DROP TABLE Importacion.AreaProtegidaJurisdiccion;
-IF OBJECT_ID('Importacion.StageVisitaTuristica', 'U') IS NOT NULL DROP TABLE Importacion.StageVisitaTuristica;
-IF OBJECT_ID('Importacion.StageAreaProtegidaJurisdiccion', 'U') IS NOT NULL DROP TABLE Importacion.StageAreaProtegidaJurisdiccion;
+IF OBJECT_ID('Importacion.CsvLinea', 'U') IS NOT NULL DROP TABLE Importacion.CsvLinea;
+IF OBJECT_ID('Importacion.CsvLineaTrabajo', 'U') IS NOT NULL DROP TABLE Importacion.CsvLineaTrabajo;
+IF OBJECT_ID('Importacion.CsvGenerico', 'U') IS NOT NULL DROP TABLE Importacion.CsvGenerico;
 IF OBJECT_ID('Importacion.LoteImportacion', 'U') IS NOT NULL DROP TABLE Importacion.LoteImportacion;
 GO
 
@@ -37,7 +47,22 @@ CREATE TABLE Importacion.LoteImportacion (
     registros_insertados int NOT NULL DEFAULT 0,
     registros_actualizados int NOT NULL DEFAULT 0,
     registros_error int NOT NULL DEFAULT 0,
-    mensaje nvarchar(4000) NULL
+    mensaje nvarchar(500) NULL
+);
+GO
+
+CREATE TABLE Importacion.CsvLineaTrabajo (
+    fila int IDENTITY(1,1) PRIMARY KEY,
+    linea nvarchar(1000) NOT NULL
+);
+GO
+
+CREATE TABLE Importacion.CsvLinea (
+    lote_id int NOT NULL,
+    fila int NOT NULL,
+    linea nvarchar(1000) NOT NULL,
+    CONSTRAINT PK_CsvLinea PRIMARY KEY (lote_id, fila),
+    CONSTRAINT FK_CsvLinea_Lote FOREIGN KEY (lote_id) REFERENCES Importacion.LoteImportacion(id)
 );
 GO
 
@@ -46,92 +71,67 @@ CREATE TABLE Importacion.ErrorImportacion (
     lote_id int NOT NULL,
     fila int NULL,
     campo varchar(100) NULL,
-    valor nvarchar(4000) NULL,
-    mensaje nvarchar(4000) NOT NULL,
+    valor nvarchar(500) NULL,
+    mensaje nvarchar(500) NOT NULL,
     fecha_error datetime2(0) NOT NULL DEFAULT SYSDATETIME(),
     CONSTRAINT FK_ErrorImportacion_Lote FOREIGN KEY (lote_id) REFERENCES Importacion.LoteImportacion(id)
 );
 GO
 
-CREATE TABLE Importacion.StageAreaProtegidaJurisdiccion (
-    jurisdicciones nvarchar(200) NULL,
-    total_cantidad nvarchar(50) NULL,
-    ap_nac nvarchar(50) NULL,
-    ap_prov nvarchar(50) NULL,
-    ap_desig_inter nvarchar(50) NULL,
-    total_ha nvarchar(50) NULL,
-    terrestre_ha nvarchar(50) NULL,
-    marino_ha nvarchar(50) NULL,
-    porcentaje_terrestre_protegido nvarchar(50) NULL
-);
+CREATE OR ALTER FUNCTION Importacion.fn_ValorCsvLinea (
+    @linea nvarchar(1000),
+    @separador varchar(5),
+    @numero_columna int
+)
+RETURNS nvarchar(500)
+AS
+BEGIN
+    DECLARE @json nvarchar(1000);
+    DECLARE @valor nvarchar(500);
+
+    IF @linea IS NULL OR @separador IS NULL OR @numero_columna IS NULL OR @numero_columna < 1
+        RETURN NULL;
+
+    --- Arma el JSON a partir de la línea y el separador, se pone N para que sea unicode, por eso @json es varchar
+    SET @json = N'["' + REPLACE(STRING_ESCAPE(@linea, 'json'), @separador, N'","') + N'"]';
+
+    --- Elimina espacios en blanco alrededor de los valores y convierte el valor (que devuelve OPENJSON) a nvarchar(500)
+    SELECT @valor = LTRIM(RTRIM(CONVERT(nvarchar(500), value)))
+    FROM OPENJSON(@json)
+    WHERE CONVERT(int, [key]) = @numero_columna - 1;
+
+    RETURN NULLIF(@valor, '');
+END;
 GO
 
-CREATE TABLE Importacion.AreaProtegidaJurisdiccion (
-    id int IDENTITY(1,1) PRIMARY KEY,
-    jurisdiccion varchar(200) NOT NULL UNIQUE,
-    total_cantidad int NULL,
-    ap_nac int NULL,
-    ap_prov int NULL,
-    ap_desig_inter int NULL,
-    total_ha decimal(18,2) NULL,
-    terrestre_ha decimal(18,2) NULL,
-    marino_ha decimal(18,2) NULL,
-    porcentaje_terrestre_protegido decimal(9,2) NULL,
-    nombre_archivo varchar(260) NOT NULL,
-    fecha_ultima_importacion datetime2(0) NOT NULL DEFAULT SYSDATETIME()
-);
+CREATE OR ALTER FUNCTION Importacion.fn_CantidadColumnasCsvLinea (
+    @linea nvarchar(1000),
+    @separador varchar(5)
+)
+RETURNS int
+AS
+BEGIN
+    DECLARE @json nvarchar(1000);
+    DECLARE @cantidad int;
+
+    IF @linea IS NULL OR @separador IS NULL
+        RETURN 0;
+
+    SET @json =  N'["' + REPLACE(STRING_ESCAPE(@linea, 'json'), @separador, N'","') + N'"]';
+
+    SELECT @cantidad = COUNT(*)
+    FROM OPENJSON(@json);
+
+    RETURN ISNULL(@cantidad, 0);
+END;
 GO
 
-CREATE TABLE Importacion.StageVisitaTuristica (
-    indice_tiempo nvarchar(50) NULL,
-    origen_visitantes nvarchar(50) NULL,
-    visitas nvarchar(50) NULL,
-    observaciones nvarchar(4000) NULL
-);
-GO
-
-CREATE TABLE Importacion.VisitaTuristicaHistorica (
-    id int IDENTITY(1,1) PRIMARY KEY,
-    indice_tiempo date NOT NULL,
-    origen_visitantes varchar(30) NOT NULL,
-    visitas int NOT NULL,
-    observaciones varchar(4000) NULL,
-    nombre_archivo varchar(260) NOT NULL,
-    fecha_ultima_importacion datetime2(0) NOT NULL DEFAULT SYSDATETIME(),
-    CONSTRAINT UQ_VisitaTuristicaHistorica UNIQUE (indice_tiempo, origen_visitantes)
-);
-GO
-
-CREATE TABLE Importacion.ApiConsulta (
-    id int IDENTITY(1,1) PRIMARY KEY,
-    url varchar(1000) NOT NULL,
-    metodo varchar(10) NOT NULL DEFAULT 'GET',
-    fecha_consulta datetime2(0) NOT NULL DEFAULT SYSDATETIME(),
-    estado varchar(20) NOT NULL,
-    codigo_http int NULL,
-    respuesta nvarchar(max) NULL,
-    mensaje_error nvarchar(4000) NULL
-);
-GO
-
-CREATE TABLE Importacion.ApiCotizacion (
-    id int IDENTITY(1,1) PRIMARY KEY,
-    api_consulta_id int NOT NULL,
-    moneda varchar(20) NOT NULL,
-    fecha date NOT NULL,
-    valor decimal(18,6) NOT NULL,
-    fecha_registro datetime2(0) NOT NULL DEFAULT SYSDATETIME(),
-    CONSTRAINT UQ_ApiCotizacion UNIQUE (moneda, fecha),
-    CONSTRAINT FK_ApiCotizacion_ApiConsulta FOREIGN KEY (api_consulta_id) REFERENCES Importacion.ApiConsulta(id)
-);
-GO
-
-CREATE OR ALTER PROCEDURE Importacion.sp_RegistrarErrorImportacion
+CREATE OR ALTER PROCEDURE Importacion.usp_RegistrarErrorImportacion
     @lote_id int,
     @fila int = NULL,
     @campo varchar(100) = NULL,
-    @valor nvarchar(4000) = NULL,
-    @mensaje nvarchar(4000)
+    @valor nvarchar(500) = NULL,
+    @mensaje nvarchar(500)
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -141,335 +141,664 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE Importacion.sp_ImportarAreasProtegidasCSV
-    @NombreArchivo varchar(260),
-    @RutaArchivo varchar(1000)
+CREATE OR ALTER PROCEDURE Importacion.usp_ValidarLoteImportacionCSV
+    @LoteId int,
+    @RutaArchivo varchar(1000),
+    @NombreArchivo varchar(260) = NULL,
+    @Dataset varchar(100)
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    DECLARE @LoteId int;
-    INSERT INTO Importacion.LoteImportacion (dataset, nombre_archivo, ruta_archivo)
-    VALUES ('Areas protegidas por jurisdiccion', @NombreArchivo, @RutaArchivo);
-    SET @LoteId = SCOPE_IDENTITY();
+    IF NOT EXISTS (SELECT 1 FROM Importacion.LoteImportacion WHERE id = @LoteId)
+    BEGIN
+        RAISERROR('ERROR: El lote indicado no existe en Importacion.LoteImportacion.', 16, 1);
+        RETURN;
+    END;
+
+    UPDATE Importacion.LoteImportacion
+    SET dataset = @Dataset,
+        nombre_archivo = COALESCE(@NombreArchivo, nombre_archivo, @RutaArchivo),
+        ruta_archivo = @RutaArchivo,
+        estado = 'En proceso',
+        fecha_fin = NULL,
+        mensaje = NULL,
+        registros_leidos = 0,
+        registros_validos = 0,
+        registros_insertados = 0,
+        registros_actualizados = 0,
+        registros_error = 0
+    WHERE id = @LoteId;
+
+    DELETE FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE Importacion.usp_FinalizarLoteImportacionCSV
+    @LoteId int,
+    @RegistrosValidos int,
+    @RegistrosInsertados int,
+    @RegistrosActualizados int,
+    @Mensaje nvarchar(500)
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    UPDATE Importacion.LoteImportacion
+    SET fecha_fin = SYSDATETIME(),
+        estado = CASE WHEN EXISTS (SELECT 1 FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId) THEN 'Con errores' ELSE 'Finalizado' END,
+        registros_validos = @RegistrosValidos,
+        registros_insertados = @RegistrosInsertados,
+        registros_actualizados = @RegistrosActualizados,
+        registros_error = (SELECT COUNT(*) FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId),
+        mensaje = @Mensaje
+    WHERE id = @LoteId;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE Importacion.usp_CargarCsvLineasDesdeArchivo
+    @LoteId int,
+    @RutaArchivo varchar(1000),
+    @Separador varchar(5) = ',',
+    @PrimeraFilaDatos int = 2
+AS
+BEGIN
+    SET NOCOUNT ON;
 
     BEGIN TRY
-        TRUNCATE TABLE Importacion.StageAreaProtegidaJurisdiccion;
+        DELETE FROM Importacion.CsvLinea WHERE lote_id = @LoteId;
+        TRUNCATE TABLE Importacion.CsvLineaTrabajo;
+
+        CREATE TABLE #CsvArchivo (
+            contenido nvarchar(max) NOT NULL
+        );
 
         DECLARE @Sql nvarchar(max) = N'
-            BULK INSERT Importacion.StageAreaProtegidaJurisdiccion
-            FROM ''' + REPLACE(@RutaArchivo, '''', '''''') + N'''
-            WITH (
-                FORMAT = ''CSV'',
-                FIRSTROW = 2,
-                FIELDTERMINATOR = '';'',
-                FIELDQUOTE = ''"'',
-                ROWTERMINATOR = ''0x0a'',
-                CODEPAGE = ''65001'',
-                MAXERRORS = 1000,
-                TABLOCK
-            );';
-
+            INSERT INTO #CsvArchivo (contenido)
+            SELECT CONVERT(nvarchar(max), BulkColumn)
+            FROM OPENROWSET(
+                BULK ''' + REPLACE(@RutaArchivo, '''', '''''') + N''',
+                SINGLE_CLOB,
+                CODEPAGE = ''65001''
+            ) AS Archivo;';
+        ---- El valor 65001 corresponde a la codificación UTF-8
         EXEC sp_executesql @Sql;
 
+        DECLARE @Contenido nvarchar(max);
+        DECLARE @JsonLineas nvarchar(max);
+
+        SELECT @Contenido = REPLACE(contenido, CHAR(13), '') --- Eliminamos carriage return, \r (Windows)
+        FROM #CsvArchivo;
+
+        SET @JsonLineas = N'["' + REPLACE(STRING_ESCAPE(@Contenido, 'json'), '\n', N'", "') + N'"]';
+
+        INSERT INTO Importacion.CsvLinea (lote_id, fila, linea)
+        SELECT @LoteId, CONVERT(int, [key]) + 1, LTRIM(RTRIM(CONVERT(nvarchar(max), value)))
+        FROM OPENJSON(@JsonLineas)
+        --- Evaluamos si value es vacio, retornamos NULL, sino retornamos value normalizado sin espacios.
+        WHERE NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(max), value))), '') IS NOT NULL;
+
         UPDATE Importacion.LoteImportacion
-        SET registros_leidos = (SELECT COUNT(*) FROM Importacion.StageAreaProtegidaJurisdiccion)
+        SET registros_leidos = (SELECT COUNT(*) FROM Importacion.CsvLinea WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos)
         WHERE id = @LoteId;
 
-        ;WITH Normalizado AS (
-            SELECT
-                ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS id,
-                LTRIM(RTRIM(REPLACE(jurisdicciones, NCHAR(160), ' '))) AS jurisdiccion,
-                NULLIF(LTRIM(RTRIM(total_cantidad)), '-') AS total_cantidad,
-                NULLIF(LTRIM(RTRIM(ap_nac)), '-') AS ap_nac,
-                NULLIF(LTRIM(RTRIM(ap_prov)), '-') AS ap_prov,
-                NULLIF(LTRIM(RTRIM(ap_desig_inter)), '-') AS ap_desig_inter,
-                NULLIF(LTRIM(RTRIM(total_ha)), '-') AS total_ha,
-                NULLIF(LTRIM(RTRIM(terrestre_ha)), '-') AS terrestre_ha,
-                NULLIF(LTRIM(RTRIM(marino_ha)), '-') AS marino_ha,
-                NULLIF(LTRIM(RTRIM(porcentaje_terrestre_protegido)), '-') AS porcentaje
-            FROM Importacion.StageAreaProtegidaJurisdiccion
+        INSERT INTO Importacion.ErrorImportacion (lote_id, fila, campo, valor, mensaje)
+        SELECT @LoteId, fila, 'archivo', LEFT(linea, 500), 'No se pueden importar archivos o filas con una sola columna.'
+        FROM Importacion.CsvLinea
+        WHERE lote_id = @LoteId
+          AND fila >= @PrimeraFilaDatos
+          AND Importacion.fn_CantidadColumnasCsvLinea(linea, @Separador) <= 1;
+
+        IF NOT EXISTS (
+            SELECT 1
+            FROM Importacion.CsvLinea
+            WHERE lote_id = @LoteId
+              AND fila >= @PrimeraFilaDatos
+              AND Importacion.fn_CantidadColumnasCsvLinea(linea, @Separador) > 1
+        )
+        BEGIN
+            RAISERROR('ERROR: No se pueden importar archivos con una sola columna.', 16, 1);
+        END;
+    END TRY
+    BEGIN CATCH
+        UPDATE Importacion.LoteImportacion
+        SET fecha_fin = SYSDATETIME(), estado = 'Error', mensaje = ERROR_MESSAGE(),
+            registros_error = (SELECT COUNT(*) FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId)
+        WHERE id = @LoteId;
+        THROW;
+    END CATCH;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE Importacion.usp_CargarExcelLineasDesdeArchivo
+    @LoteId int,
+    @RutaArchivo varchar(1000),
+    @NombreHoja varchar(128),
+    @Separador varchar(5) = ',',
+    @PrimeraFilaDatos int = 2
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        IF NULLIF(LTRIM(RTRIM(@NombreHoja)), '') IS NULL
+        BEGIN
+            RAISERROR('ERROR: Para importar Excel se debe indicar @NombreHoja sin el signo $.', 16, 1);
+            RETURN;
+        END;
+
+        DELETE FROM Importacion.CsvLinea WHERE lote_id = @LoteId;
+        TRUNCATE TABLE Importacion.CsvLineaTrabajo;
+
+        DECLARE @Sql nvarchar(max);
+        DECLARE @HojaRango varchar(300) = REPLACE(@NombreHoja, '''', '''''') + '$A:AD';
+
+        SET @Sql = N'
+            INSERT INTO Importacion.CsvLinea (lote_id, fila, linea)
+            SELECT @LoteId,
+                   ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS fila,
+                   LTRIM(RTRIM(
+                       ISNULL(CONVERT(nvarchar(500), F1), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F2), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F3), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F4), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F5), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F6), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F7), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F8), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F9), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F10), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F11), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F12), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F13), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F14), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F15), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F16), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F17), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F18), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F19), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F20), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F21), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F22), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F23), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F24), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F25), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F26), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F27), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F28), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F29), '''') + @Separador +
+                       ISNULL(CONVERT(nvarchar(500), F30), '''')
+                   )) AS linea
+            FROM OPENROWSET(
+                ''Microsoft.ACE.OLEDB.16.0'',
+                ''Excel 12.0;Database=' + REPLACE(@RutaArchivo, '''', '''''') + ';HDR=NO;IMEX=1'',
+                ''SELECT * FROM [' + @HojaRango + ']''
+            ) AS ExcelFilas
+            WHERE COALESCE(
+                CONVERT(nvarchar(500), F1), CONVERT(nvarchar(500), F2), CONVERT(nvarchar(500), F3),
+                CONVERT(nvarchar(500), F4), CONVERT(nvarchar(500), F5), CONVERT(nvarchar(500), F6),
+                CONVERT(nvarchar(500), F7), CONVERT(nvarchar(500), F8), CONVERT(nvarchar(500), F9),
+                CONVERT(nvarchar(500), F10), CONVERT(nvarchar(500), F11), CONVERT(nvarchar(500), F12),
+                CONVERT(nvarchar(500), F13), CONVERT(nvarchar(500), F14), CONVERT(nvarchar(500), F15),
+                CONVERT(nvarchar(500), F16), CONVERT(nvarchar(500), F17), CONVERT(nvarchar(500), F18),
+                CONVERT(nvarchar(500), F19), CONVERT(nvarchar(500), F20), CONVERT(nvarchar(500), F21),
+                CONVERT(nvarchar(500), F22), CONVERT(nvarchar(500), F23), CONVERT(nvarchar(500), F24),
+                CONVERT(nvarchar(500), F25), CONVERT(nvarchar(500), F26), CONVERT(nvarchar(500), F27),
+                CONVERT(nvarchar(500), F28), CONVERT(nvarchar(500), F29), CONVERT(nvarchar(500), F30)
+            ) IS NOT NULL;';
+
+        EXEC sp_executesql @Sql, N'@LoteId int, @Separador varchar(5)', @LoteId = @LoteId, @Separador = @Separador;
+
+        UPDATE Importacion.LoteImportacion
+        SET registros_leidos = (SELECT COUNT(*) FROM Importacion.CsvLinea WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos)
+        WHERE id = @LoteId;
+
+        INSERT INTO Importacion.ErrorImportacion (lote_id, fila, campo, valor, mensaje)
+        SELECT @LoteId, fila, 'archivo', LEFT(linea, 500), 'No se pueden importar archivos o filas con una sola columna.'
+        FROM Importacion.CsvLinea
+        WHERE lote_id = @LoteId
+          AND fila >= @PrimeraFilaDatos
+          AND Importacion.fn_CantidadColumnasCsvLinea(linea, @Separador) <= 1;
+
+        IF NOT EXISTS (
+            SELECT 1
+            FROM Importacion.CsvLinea
+            WHERE lote_id = @LoteId
+              AND fila >= @PrimeraFilaDatos
+              AND Importacion.fn_CantidadColumnasCsvLinea(linea, @Separador) > 1
+        )
+        BEGIN
+            RAISERROR('ERROR: No se pueden importar archivos con una sola columna.', 16, 1);
+        END;
+    END TRY
+    BEGIN CATCH
+        UPDATE Importacion.LoteImportacion
+        SET fecha_fin = SYSDATETIME(), estado = 'Error', mensaje = ERROR_MESSAGE(),
+            registros_error = (SELECT COUNT(*) FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId)
+        WHERE id = @LoteId;
+        THROW;
+    END CATCH;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE Importacion.usp_ImportarParqueCSV
+    @LoteId int,
+    @RutaArchivo varchar(1000),
+    @MapeoColumnas nvarchar(max),
+    @NombreArchivo varchar(260) = NULL,
+    @Separador varchar(5) = ',',
+    @PrimeraFilaDatos int = 2,
+    @TipoArchivo varchar(10) = 'CSV',
+    @NombreHoja varchar(128) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        EXEC Importacion.usp_ValidarLoteImportacionCSV @LoteId, @RutaArchivo, @NombreArchivo, 'Parque';
+        IF UPPER(@TipoArchivo) IN ('XLS', 'XLSX')
+            EXEC Importacion.usp_CargarExcelLineasDesdeArchivo @LoteId, @RutaArchivo, @NombreHoja, @Separador, @PrimeraFilaDatos;
+        ELSE
+            EXEC Importacion.usp_CargarCsvLineasDesdeArchivo @LoteId, @RutaArchivo, @Separador, @PrimeraFilaDatos;
+
+        DECLARE @ColCodigo int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.Codigo'));
+        DECLARE @ColNombre int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.nombre'));
+        DECLARE @ColUbicacion int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.ubicacion'));
+        DECLARE @ColTipoParque int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.tipo_parque'));
+        DECLARE @ColSuperficie int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.superficie_ha'));
+
+        IF @ColCodigo IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'Codigo', NULL, 'Falta mapear Codigo.';
+        IF @ColNombre IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'nombre', NULL, 'Falta mapear nombre.';
+        IF @ColUbicacion IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'ubicacion', NULL, 'Falta mapear ubicacion.';
+        IF @ColTipoParque IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'tipo_parque', NULL, 'Falta mapear tipo_parque.';
+        IF @ColSuperficie IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'superficie_ha', NULL, 'Falta mapear superficie_ha.';
+        IF EXISTS (SELECT 1 FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId AND fila IS NULL) RAISERROR('ERROR: El mapeo de columnas esta incompleto.', 16, 1);
+
+        ;WITH Datos AS (
+            SELECT fila,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColCodigo) AS Codigo,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColUbicacion) AS ubicacion,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColTipoParque) AS tipo_parque,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColSuperficie) AS superficie_ha
+            FROM Importacion.CsvLinea
+            WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos
         ), Errores AS (
-            SELECT id, 'jurisdicciones' AS campo, jurisdiccion AS valor, 'Jurisdiccion obligatoria o fila agregada no importable.' AS mensaje
-            FROM Normalizado
-            WHERE ISNULL(jurisdiccion, '') = '' OR jurisdiccion = 'Total'
-            UNION ALL
-            SELECT id, 'total_cantidad', total_cantidad, 'total_cantidad debe ser numerico mayor o igual a cero.' FROM Normalizado WHERE total_cantidad IS NOT NULL AND (TRY_CONVERT(int, total_cantidad) IS NULL OR TRY_CONVERT(int, total_cantidad) < 0)
-            UNION ALL
-            SELECT id, 'ap_nac', ap_nac, 'ap_nac debe ser numerico mayor o igual a cero.' FROM Normalizado WHERE ap_nac IS NOT NULL AND (TRY_CONVERT(int, ap_nac) IS NULL OR TRY_CONVERT(int, ap_nac) < 0)
-            UNION ALL
-            SELECT id, 'ap_prov', ap_prov, 'ap_prov debe ser numerico mayor o igual a cero.' FROM Normalizado WHERE ap_prov IS NOT NULL AND (TRY_CONVERT(int, ap_prov) IS NULL OR TRY_CONVERT(int, ap_prov) < 0)
-            UNION ALL
-            SELECT id, 'ap_desig_inter', ap_desig_inter, 'ap_desig_inter debe ser numerico mayor o igual a cero.' FROM Normalizado WHERE ap_desig_inter IS NOT NULL AND (TRY_CONVERT(int, ap_desig_inter) IS NULL OR TRY_CONVERT(int, ap_desig_inter) < 0)
-            UNION ALL
-            SELECT id, 'total_ha', total_ha, 'total_ha debe ser numerico mayor o igual a cero.' FROM Normalizado WHERE total_ha IS NOT NULL AND (TRY_CONVERT(decimal(18,2), total_ha) IS NULL OR TRY_CONVERT(decimal(18,2), total_ha) < 0)
-            UNION ALL
-            SELECT id, 'terrestre_ha', terrestre_ha, 'terrestre_ha debe ser numerico mayor o igual a cero.' FROM Normalizado WHERE terrestre_ha IS NOT NULL AND (TRY_CONVERT(decimal(18,2), terrestre_ha) IS NULL OR TRY_CONVERT(decimal(18,2), terrestre_ha) < 0)
-            UNION ALL
-            SELECT id, 'marino_ha', marino_ha, 'marino_ha debe ser numerico mayor o igual a cero.' FROM Normalizado WHERE marino_ha IS NOT NULL AND (TRY_CONVERT(decimal(18,2), marino_ha) IS NULL OR TRY_CONVERT(decimal(18,2), marino_ha) < 0)
-            UNION ALL
-            SELECT id, 'porcentaje_terrestre_protegido', porcentaje, 'porcentaje_terrestre_protegido debe ser numerico mayor o igual a cero.' FROM Normalizado WHERE porcentaje IS NOT NULL AND (TRY_CONVERT(decimal(9,2), porcentaje) IS NULL OR TRY_CONVERT(decimal(9,2), porcentaje) < 0)
+            SELECT fila, 'Codigo' AS campo, Codigo AS valor, 'Codigo obligatorio.' AS mensaje FROM Datos WHERE ISNULL(Codigo, '') = ''
+            UNION ALL SELECT fila, 'nombre', nombre, 'Nombre obligatorio.' FROM Datos WHERE ISNULL(nombre, '') = ''
+            UNION ALL SELECT fila, 'ubicacion', ubicacion, 'Ubicacion obligatoria.' FROM Datos WHERE ISNULL(ubicacion, '') = ''
+            UNION ALL SELECT fila, 'tipo_parque', tipo_parque, 'tipo_parque debe tener 2 caracteres.' FROM Datos WHERE LEN(ISNULL(tipo_parque, '')) <> 2
+            UNION ALL SELECT fila, 'superficie_ha', superficie_ha, 'superficie_ha debe ser mayor a 0.' FROM Datos WHERE TRY_CONVERT(decimal(12,2), superficie_ha) IS NULL OR TRY_CONVERT(decimal(12,2), superficie_ha) <= 0
         )
         INSERT INTO Importacion.ErrorImportacion (lote_id, fila, campo, valor, mensaje)
-        SELECT @LoteId, id, campo, valor, mensaje
-        FROM Errores;
+        SELECT @LoteId, fila, campo, valor, mensaje FROM Errores;
 
         DECLARE @Cambios TABLE (accion varchar(10));
 
-        ;WITH Normalizado AS (
-            SELECT
-                ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS id,
-                LTRIM(RTRIM(REPLACE(jurisdicciones, NCHAR(160), ' '))) AS jurisdiccion,
-                NULLIF(LTRIM(RTRIM(total_cantidad)), '-') AS total_cantidad,
-                NULLIF(LTRIM(RTRIM(ap_nac)), '-') AS ap_nac,
-                NULLIF(LTRIM(RTRIM(ap_prov)), '-') AS ap_prov,
-                NULLIF(LTRIM(RTRIM(ap_desig_inter)), '-') AS ap_desig_inter,
-                NULLIF(LTRIM(RTRIM(total_ha)), '-') AS total_ha,
-                NULLIF(LTRIM(RTRIM(terrestre_ha)), '-') AS terrestre_ha,
-                NULLIF(LTRIM(RTRIM(marino_ha)), '-') AS marino_ha,
-                NULLIF(LTRIM(RTRIM(porcentaje_terrestre_protegido)), '-') AS porcentaje
-            FROM Importacion.StageAreaProtegidaJurisdiccion
+        ;WITH Datos AS (
+            SELECT fila,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColCodigo) AS Codigo,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColUbicacion) AS ubicacion,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColTipoParque) AS tipo_parque,
+                TRY_CONVERT(decimal(12,2), Importacion.fn_ValorCsvLinea(linea, @Separador, @ColSuperficie)) AS superficie_ha
+            FROM Importacion.CsvLinea
+            WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos
         ), Validado AS (
-            SELECT *
-            FROM Normalizado N
-            WHERE ISNULL(jurisdiccion, '') <> ''
-              AND jurisdiccion <> 'Total'
-              AND (total_cantidad IS NULL OR TRY_CONVERT(int, total_cantidad) >= 0)
-              AND (ap_nac IS NULL OR TRY_CONVERT(int, ap_nac) >= 0)
-              AND (ap_prov IS NULL OR TRY_CONVERT(int, ap_prov) >= 0)
-              AND (ap_desig_inter IS NULL OR TRY_CONVERT(int, ap_desig_inter) >= 0)
-              AND (total_ha IS NULL OR TRY_CONVERT(decimal(18,2), total_ha) >= 0)
-              AND (terrestre_ha IS NULL OR TRY_CONVERT(decimal(18,2), terrestre_ha) >= 0)
-              AND (marino_ha IS NULL OR TRY_CONVERT(decimal(18,2), marino_ha) >= 0)
-              AND (porcentaje IS NULL OR TRY_CONVERT(decimal(9,2), porcentaje) >= 0)
+            SELECT * FROM Datos D WHERE NOT EXISTS (SELECT 1 FROM Importacion.ErrorImportacion E WHERE E.lote_id = @LoteId AND E.fila = D.fila)
         )
-        MERGE Importacion.AreaProtegidaJurisdiccion AS Target
+        MERGE Parques.Parque AS Target
         USING Validado AS Source
-        ON Target.jurisdiccion = Source.jurisdiccion
-        WHEN MATCHED THEN
-            UPDATE SET
-                total_cantidad = TRY_CONVERT(int, Source.total_cantidad),
-                ap_nac = TRY_CONVERT(int, Source.ap_nac),
-                ap_prov = TRY_CONVERT(int, Source.ap_prov),
-                ap_desig_inter = TRY_CONVERT(int, Source.ap_desig_inter),
-                total_ha = TRY_CONVERT(decimal(18,2), Source.total_ha),
-                terrestre_ha = TRY_CONVERT(decimal(18,2), Source.terrestre_ha),
-                marino_ha = TRY_CONVERT(decimal(18,2), Source.marino_ha),
-                porcentaje_terrestre_protegido = TRY_CONVERT(decimal(9,2), Source.porcentaje),
-                nombre_archivo = @NombreArchivo,
-                fecha_ultima_importacion = SYSDATETIME()
-        WHEN NOT MATCHED THEN
-            INSERT (jurisdiccion, total_cantidad, ap_nac, ap_prov, ap_desig_inter, total_ha, terrestre_ha, marino_ha, porcentaje_terrestre_protegido, nombre_archivo)
-            VALUES (Source.jurisdiccion, TRY_CONVERT(int, Source.total_cantidad), TRY_CONVERT(int, Source.ap_nac), TRY_CONVERT(int, Source.ap_prov), TRY_CONVERT(int, Source.ap_desig_inter), TRY_CONVERT(decimal(18,2), Source.total_ha), TRY_CONVERT(decimal(18,2), Source.terrestre_ha), TRY_CONVERT(decimal(18,2), Source.marino_ha), TRY_CONVERT(decimal(9,2), Source.porcentaje), @NombreArchivo)
+        ON Target.Codigo = Source.Codigo
+        WHEN MATCHED THEN UPDATE SET nombre = Source.nombre, ubicacion = Source.ubicacion, tipo_parque = Source.tipo_parque, superficie_ha = Source.superficie_ha
+        WHEN NOT MATCHED THEN INSERT (Codigo, nombre, ubicacion, tipo_parque, superficie_ha) VALUES (Source.Codigo, Source.nombre, Source.ubicacion, Source.tipo_parque, Source.superficie_ha)
         OUTPUT $action INTO @Cambios;
 
-        UPDATE Importacion.LoteImportacion
-        SET fecha_fin = SYSDATETIME(),
-            estado = 'Finalizado',
-            registros_validos = (SELECT COUNT(*) FROM @Cambios),
-            registros_insertados = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'INSERT'),
-            registros_actualizados = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'UPDATE'),
-            registros_error = (SELECT COUNT(*) FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId),
-            mensaje = 'Importacion de areas protegidas finalizada.'
-        WHERE id = @LoteId;
+        DECLARE @RegistrosValidos int = (SELECT COUNT(*) FROM @Cambios);
+        DECLARE @RegistrosInsertados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'INSERT');
+        DECLARE @RegistrosActualizados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'UPDATE');
+
+        EXEC Importacion.usp_FinalizarLoteImportacionCSV @LoteId, @RegistrosValidos, @RegistrosInsertados, @RegistrosActualizados, 'Importacion CSV de parques finalizada.';
     END TRY
     BEGIN CATCH
-        UPDATE Importacion.LoteImportacion
-        SET fecha_fin = SYSDATETIME(), estado = 'Error', mensaje = ERROR_MESSAGE()
-        WHERE id = @LoteId;
+        UPDATE Importacion.LoteImportacion SET fecha_fin = SYSDATETIME(), estado = 'Error', mensaje = ERROR_MESSAGE(), registros_error = (SELECT COUNT(*) FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId) WHERE id = @LoteId;
         THROW;
     END CATCH;
 END;
 GO
 
-CREATE OR ALTER PROCEDURE Importacion.sp_ImportarVisitasTuristicasCSV
-    @NombreArchivo varchar(260),
-    @RutaArchivo varchar(1000)
+CREATE OR ALTER PROCEDURE Importacion.usp_ImportarVisitanteCSV
+    @LoteId int,
+    @RutaArchivo varchar(1000),
+    @MapeoColumnas nvarchar(max),
+    @NombreArchivo varchar(260) = NULL,
+    @Separador varchar(5) = ',',
+    @PrimeraFilaDatos int = 2,
+    @TipoArchivo varchar(10) = 'CSV',
+    @NombreHoja varchar(128) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    DECLARE @LoteId int;
-    INSERT INTO Importacion.LoteImportacion (dataset, nombre_archivo, ruta_archivo)
-    VALUES ('Visitas residentes y no residentes', @NombreArchivo, @RutaArchivo);
-    SET @LoteId = SCOPE_IDENTITY();
-
     BEGIN TRY
-        TRUNCATE TABLE Importacion.StageVisitaTuristica;
+        EXEC Importacion.usp_ValidarLoteImportacionCSV @LoteId, @RutaArchivo, @NombreArchivo, 'Visitante';
+        IF UPPER(@TipoArchivo) IN ('XLS', 'XLSX')
+            EXEC Importacion.usp_CargarExcelLineasDesdeArchivo @LoteId, @RutaArchivo, @NombreHoja, @Separador, @PrimeraFilaDatos;
+        ELSE
+            EXEC Importacion.usp_CargarCsvLineasDesdeArchivo @LoteId, @RutaArchivo, @Separador, @PrimeraFilaDatos;
 
-        DECLARE @Sql nvarchar(max) = N'
-            BULK INSERT Importacion.StageVisitaTuristica
-            FROM ''' + REPLACE(@RutaArchivo, '''', '''''') + N'''
-            WITH (
-                FORMAT = ''CSV'',
-                FIRSTROW = 2,
-                FIELDTERMINATOR = '','',
-                FIELDQUOTE = ''"'',
-                ROWTERMINATOR = ''0x0a'',
-                CODEPAGE = ''65001'',
-                MAXERRORS = 1000,
-                TABLOCK
-            );';
+        DECLARE @ColNombre int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.nombre'));
+        DECLARE @ColApellido int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.apellido'));
+        DECLARE @ColDni int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.dni'));
 
-        EXEC sp_executesql @Sql;
+        IF @ColNombre IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'nombre', NULL, 'Falta mapear nombre.';
+        IF @ColApellido IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'apellido', NULL, 'Falta mapear apellido.';
+        IF @ColDni IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'dni', NULL, 'Falta mapear dni.';
+        IF EXISTS (SELECT 1 FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId AND fila IS NULL) RAISERROR('ERROR: El mapeo de columnas esta incompleto.', 16, 1);
 
-        UPDATE Importacion.LoteImportacion
-        SET registros_leidos = (SELECT COUNT(*) FROM Importacion.StageVisitaTuristica)
-        WHERE id = @LoteId;
-
-        ;WITH Normalizado AS (
-            SELECT
-                ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS id,
-                LTRIM(RTRIM(indice_tiempo)) AS indice_tiempo,
-                LOWER(LTRIM(RTRIM(origen_visitantes))) AS origen_visitantes,
-                LTRIM(RTRIM(visitas)) AS visitas
-            FROM Importacion.StageVisitaTuristica
+        ;WITH Datos AS (
+            SELECT fila,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColApellido) AS apellido,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColDni) AS dni
+            FROM Importacion.CsvLinea
+            WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos
         ), Errores AS (
-            SELECT id, 'indice_tiempo' AS campo, indice_tiempo AS valor, 'indice_tiempo debe ser una fecha valida.' AS mensaje
-            FROM Normalizado WHERE TRY_CONVERT(date, indice_tiempo) IS NULL
-            UNION ALL
-            SELECT id, 'origen_visitantes', origen_visitantes, 'origen_visitantes debe ser residentes, no residentes o total.'
-            FROM Normalizado WHERE ISNULL(origen_visitantes, '') NOT IN ('residentes', 'no residentes', 'total')
-            UNION ALL
-            SELECT id, 'visitas', visitas, 'visitas debe ser un entero mayor o igual a cero.'
-            FROM Normalizado WHERE TRY_CONVERT(int, visitas) IS NULL OR TRY_CONVERT(int, visitas) < 0
+            SELECT fila, 'nombre' AS campo, nombre AS valor, 'Nombre obligatorio.' AS mensaje FROM Datos WHERE ISNULL(nombre, '') = ''
+            UNION ALL SELECT fila, 'apellido', apellido, 'Apellido obligatorio.' FROM Datos WHERE ISNULL(apellido, '') = ''
+            UNION ALL SELECT fila, 'dni', dni, 'DNI obligatorio con longitud minima 6.' FROM Datos WHERE LEN(ISNULL(dni, '')) < 6
         )
         INSERT INTO Importacion.ErrorImportacion (lote_id, fila, campo, valor, mensaje)
-        SELECT @LoteId, id, campo, valor, mensaje
-        FROM Errores;
+        SELECT @LoteId, fila, campo, valor, mensaje FROM Errores;
 
         DECLARE @Cambios TABLE (accion varchar(10));
 
-        ;WITH Normalizado AS (
-            SELECT
-                ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS id,
-                TRY_CONVERT(date, LTRIM(RTRIM(indice_tiempo))) AS indice_tiempo,
-                LOWER(LTRIM(RTRIM(origen_visitantes))) AS origen_visitantes,
-                TRY_CONVERT(int, LTRIM(RTRIM(visitas))) AS visitas,
-                NULLIF(LTRIM(RTRIM(observaciones)), '') AS observaciones
-            FROM Importacion.StageVisitaTuristica
+        ;WITH Datos AS (
+            SELECT fila,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColApellido) AS apellido,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColDni) AS dni
+            FROM Importacion.CsvLinea
+            WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos
         ), Validado AS (
-            SELECT *
-            FROM Normalizado N
-            WHERE indice_tiempo IS NOT NULL
-              AND origen_visitantes IN ('residentes', 'no residentes', 'total')
-              AND visitas IS NOT NULL
-              AND visitas >= 0
+            SELECT * FROM Datos D WHERE NOT EXISTS (SELECT 1 FROM Importacion.ErrorImportacion E WHERE E.lote_id = @LoteId AND E.fila = D.fila)
         )
-        MERGE Importacion.VisitaTuristicaHistorica AS Target
+        MERGE Ventas.Visitante AS Target
         USING Validado AS Source
-        ON Target.indice_tiempo = Source.indice_tiempo
-           AND Target.origen_visitantes = Source.origen_visitantes
-        WHEN MATCHED THEN
-            UPDATE SET
-                visitas = Source.visitas,
-                observaciones = Source.observaciones,
-                nombre_archivo = @NombreArchivo,
-                fecha_ultima_importacion = SYSDATETIME()
-        WHEN NOT MATCHED THEN
-            INSERT (indice_tiempo, origen_visitantes, visitas, observaciones, nombre_archivo)
-            VALUES (Source.indice_tiempo, Source.origen_visitantes, Source.visitas, Source.observaciones, @NombreArchivo)
+        ON Target.dni = Source.dni
+        WHEN MATCHED THEN UPDATE SET nombre = Source.nombre, apellido = Source.apellido
+        WHEN NOT MATCHED THEN INSERT (nombre, apellido, dni) VALUES (Source.nombre, Source.apellido, Source.dni)
         OUTPUT $action INTO @Cambios;
 
-        UPDATE Importacion.LoteImportacion
-        SET fecha_fin = SYSDATETIME(),
-            estado = 'Finalizado',
-            registros_validos = (SELECT COUNT(*) FROM @Cambios),
-            registros_insertados = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'INSERT'),
-            registros_actualizados = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'UPDATE'),
-            registros_error = (SELECT COUNT(*) FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId),
-            mensaje = 'Importacion de visitas turisticas finalizada.'
-        WHERE id = @LoteId;
+        DECLARE @RegistrosValidos int = (SELECT COUNT(*) FROM @Cambios);
+        DECLARE @RegistrosInsertados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'INSERT');
+        DECLARE @RegistrosActualizados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'UPDATE');
+
+        EXEC Importacion.usp_FinalizarLoteImportacionCSV @LoteId, @RegistrosValidos, @RegistrosInsertados, @RegistrosActualizados, 'Importacion CSV de visitantes finalizada.';
     END TRY
     BEGIN CATCH
-        UPDATE Importacion.LoteImportacion
-        SET fecha_fin = SYSDATETIME(), estado = 'Error', mensaje = ERROR_MESSAGE()
-        WHERE id = @LoteId;
+        UPDATE Importacion.LoteImportacion SET fecha_fin = SYSDATETIME(), estado = 'Error', mensaje = ERROR_MESSAGE(), registros_error = (SELECT COUNT(*) FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId) WHERE id = @LoteId;
         THROW;
     END CATCH;
 END;
 GO
 
-CREATE OR ALTER PROCEDURE Importacion.sp_ConsumirApi
-    @UrlApi varchar(1000),
-    @Metodo varchar(10) = 'GET',
-    @ApiConsultaId int OUTPUT
+CREATE OR ALTER PROCEDURE Importacion.usp_ImportarGuiaCSV
+    @LoteId int,
+    @RutaArchivo varchar(1000),
+    @MapeoColumnas nvarchar(max),
+    @NombreArchivo varchar(260) = NULL,
+    @Separador varchar(5) = ',',
+    @PrimeraFilaDatos int = 2,
+    @TipoArchivo varchar(10) = 'CSV',
+    @NombreHoja varchar(128) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
-
-    DECLARE @Object int;
-    DECLARE @Status int;
-    DECLARE @ResponseText nvarchar(max);
-
-    INSERT INTO Importacion.ApiConsulta (url, metodo, estado)
-    VALUES (@UrlApi, @Metodo, 'Iniciado');
-    SET @ApiConsultaId = SCOPE_IDENTITY();
 
     BEGIN TRY
-        EXEC sp_OACreate 'MSXML2.ServerXMLHTTP.6.0', @Object OUT;
-        EXEC sp_OAMethod @Object, 'open', NULL, @Metodo, @UrlApi, false;
-        EXEC sp_OAMethod @Object, 'send';
-        EXEC sp_OAGetProperty @Object, 'status', @Status OUT;
-        EXEC sp_OAGetProperty @Object, 'responseText', @ResponseText OUT;
-        EXEC sp_OADestroy @Object;
+        EXEC Importacion.usp_ValidarLoteImportacionCSV @LoteId, @RutaArchivo, @NombreArchivo, 'Guia';
+        IF UPPER(@TipoArchivo) IN ('XLS', 'XLSX')
+            EXEC Importacion.usp_CargarExcelLineasDesdeArchivo @LoteId, @RutaArchivo, @NombreHoja, @Separador, @PrimeraFilaDatos;
+        ELSE
+            EXEC Importacion.usp_CargarCsvLineasDesdeArchivo @LoteId, @RutaArchivo, @Separador, @PrimeraFilaDatos;
 
-        UPDATE Importacion.ApiConsulta
-        SET estado = CASE WHEN @Status BETWEEN 200 AND 299 THEN 'Finalizado' ELSE 'Error' END,
-            codigo_http = @Status,
-            respuesta = @ResponseText,
-            mensaje_error = CASE WHEN @Status BETWEEN 200 AND 299 THEN NULL ELSE 'La API respondio con estado HTTP no exitoso.' END
-        WHERE id = @ApiConsultaId;
+        DECLARE @ColNombre int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.nombre'));
+        DECLARE @ColApellido int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.apellido'));
+        DECLARE @ColDni int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.dni'));
+        DECLARE @ColTitulo int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.titulo'));
+        DECLARE @ColTipoHabilitacion int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.tipo_habilitacion'));
+        DECLARE @ColEspecialidad int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.especialidad'));
+
+        IF @ColNombre IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'nombre', NULL, 'Falta mapear nombre.';
+        IF @ColApellido IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'apellido', NULL, 'Falta mapear apellido.';
+        IF @ColDni IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'dni', NULL, 'Falta mapear dni.';
+        IF @ColEspecialidad IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'especialidad', NULL, 'Falta mapear especialidad.';
+        IF EXISTS (SELECT 1 FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId AND fila IS NULL) RAISERROR('ERROR: El mapeo de columnas esta incompleto.', 16, 1);
+
+        ;WITH Datos AS (
+            SELECT fila,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColApellido) AS apellido,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColDni) AS dni,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColTitulo) AS titulo,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColTipoHabilitacion) AS tipo_habilitacion,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColEspecialidad) AS especialidad
+            FROM Importacion.CsvLinea
+            WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos
+        ), Errores AS (
+            SELECT fila, 'nombre' AS campo, nombre AS valor, 'Nombre obligatorio.' AS mensaje FROM Datos WHERE ISNULL(nombre, '') = ''
+            UNION ALL SELECT fila, 'apellido', apellido, 'Apellido obligatorio.' FROM Datos WHERE ISNULL(apellido, '') = ''
+            UNION ALL SELECT fila, 'dni', dni, 'DNI obligatorio con longitud minima 6.' FROM Datos WHERE LEN(ISNULL(dni, '')) < 6
+            UNION ALL SELECT fila, 'especialidad', especialidad, 'Especialidad obligatoria.' FROM Datos WHERE ISNULL(especialidad, '') = ''
+        )
+        INSERT INTO Importacion.ErrorImportacion (lote_id, fila, campo, valor, mensaje)
+        SELECT @LoteId, fila, campo, valor, mensaje FROM Errores;
+
+        DECLARE @Cambios TABLE (accion varchar(10));
+
+        ;WITH Datos AS (
+            SELECT fila,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColApellido) AS apellido,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColDni) AS dni,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColTitulo) AS titulo,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColTipoHabilitacion) AS tipo_habilitacion,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColEspecialidad) AS especialidad
+            FROM Importacion.CsvLinea
+            WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos
+        ), Validado AS (
+            SELECT * FROM Datos D WHERE NOT EXISTS (SELECT 1 FROM Importacion.ErrorImportacion E WHERE E.lote_id = @LoteId AND E.fila = D.fila)
+        )
+        MERGE Personal.Guia AS Target
+        USING Validado AS Source
+        ON Target.dni = Source.dni
+        WHEN MATCHED THEN UPDATE SET nombre = Source.nombre, apellido = Source.apellido, titulo = Source.titulo, tipo_habilitacion = Source.tipo_habilitacion, especialidad = Source.especialidad
+        WHEN NOT MATCHED THEN INSERT (nombre, apellido, dni, titulo, tipo_habilitacion, especialidad) VALUES (Source.nombre, Source.apellido, Source.dni, Source.titulo, Source.tipo_habilitacion, Source.especialidad)
+        OUTPUT $action INTO @Cambios;
+
+        DECLARE @RegistrosValidos int = (SELECT COUNT(*) FROM @Cambios);
+        DECLARE @RegistrosInsertados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'INSERT');
+        DECLARE @RegistrosActualizados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'UPDATE');
+
+        EXEC Importacion.usp_FinalizarLoteImportacionCSV @LoteId, @RegistrosValidos, @RegistrosInsertados, @RegistrosActualizados, 'Importacion CSV de guias finalizada.';
     END TRY
     BEGIN CATCH
-        IF @Object IS NOT NULL EXEC sp_OADestroy @Object;
-
-        UPDATE Importacion.ApiConsulta
-        SET estado = 'Error', mensaje_error = ERROR_MESSAGE()
-        WHERE id = @ApiConsultaId;
-
+        UPDATE Importacion.LoteImportacion SET fecha_fin = SYSDATETIME(), estado = 'Error', mensaje = ERROR_MESSAGE(), registros_error = (SELECT COUNT(*) FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId) WHERE id = @LoteId;
         THROW;
     END CATCH;
 END;
 GO
 
-CREATE OR ALTER PROCEDURE Importacion.sp_RegistrarCotizacionDesdeApi
-    @UrlApi varchar(1000),
-    @Moneda varchar(20),
-    @ApiConsultaId int OUTPUT
+CREATE OR ALTER PROCEDURE Importacion.usp_ImportarGuardaParqueCSV
+    @LoteId int,
+    @RutaArchivo varchar(1000),
+    @MapeoColumnas nvarchar(max),
+    @NombreArchivo varchar(260) = NULL,
+    @Separador varchar(5) = ',',
+    @PrimeraFilaDatos int = 2,
+    @TipoArchivo varchar(10) = 'CSV',
+    @NombreHoja varchar(128) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    EXEC Importacion.sp_ConsumirApi
-        @UrlApi = @UrlApi,
-        @Metodo = 'GET',
-        @ApiConsultaId = @ApiConsultaId OUTPUT;
+    BEGIN TRY
+        EXEC Importacion.usp_ValidarLoteImportacionCSV @LoteId, @RutaArchivo, @NombreArchivo, 'GuardaParque';
+        IF UPPER(@TipoArchivo) IN ('XLS', 'XLSX')
+            EXEC Importacion.usp_CargarExcelLineasDesdeArchivo @LoteId, @RutaArchivo, @NombreHoja, @Separador, @PrimeraFilaDatos;
+        ELSE
+            EXEC Importacion.usp_CargarCsvLineasDesdeArchivo @LoteId, @RutaArchivo, @Separador, @PrimeraFilaDatos;
 
-    DECLARE @Respuesta nvarchar(max);
-    SELECT @Respuesta = respuesta
-    FROM Importacion.ApiConsulta
-    WHERE id = @ApiConsultaId AND estado = 'Finalizado';
+        DECLARE @ColNombre int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.nombre'));
+        DECLARE @ColApellido int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.apellido'));
+        DECLARE @ColDni int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.dni'));
+        DECLARE @ColEstado int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.estado'));
 
-    IF @Respuesta IS NULL RETURN;
+        IF @ColNombre IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'nombre', NULL, 'Falta mapear nombre.';
+        IF @ColApellido IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'apellido', NULL, 'Falta mapear apellido.';
+        IF @ColDni IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'dni', NULL, 'Falta mapear dni.';
+        IF @ColEstado IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'estado', NULL, 'Falta mapear estado.';
+        IF EXISTS (SELECT 1 FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId AND fila IS NULL) RAISERROR('ERROR: El mapeo de columnas esta incompleto.', 16, 1);
 
-    ;WITH Datos AS (
-        SELECT
-            TRY_CONVERT(date, JSON_VALUE(value, '$.fecha')) AS fecha,
-            TRY_CONVERT(decimal(18,6), JSON_VALUE(value, '$.valor')) AS valor
-        FROM OPENJSON(@Respuesta, '$.results')
-    ), Validado AS (
-        SELECT fecha, valor
-        FROM Datos
-        WHERE fecha IS NOT NULL AND valor IS NOT NULL
-    )
-    MERGE Importacion.ApiCotizacion AS Target
-    USING Validado AS Source
-    ON Target.moneda = @Moneda AND Target.fecha = Source.fecha
-    WHEN MATCHED THEN
-        UPDATE SET valor = Source.valor, api_consulta_id = @ApiConsultaId, fecha_registro = SYSDATETIME()
-    WHEN NOT MATCHED THEN
-        INSERT (api_consulta_id, moneda, fecha, valor)
-        VALUES (@ApiConsultaId, @Moneda, Source.fecha, Source.valor);
+        ;WITH Datos AS (
+            SELECT fila,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColApellido) AS apellido,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColDni) AS dni,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColEstado) AS estado
+            FROM Importacion.CsvLinea
+            WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos
+        ), Errores AS (
+            SELECT fila, 'nombre' AS campo, nombre AS valor, 'Nombre obligatorio.' AS mensaje FROM Datos WHERE ISNULL(nombre, '') = ''
+            UNION ALL SELECT fila, 'apellido', apellido, 'Apellido obligatorio.' FROM Datos WHERE ISNULL(apellido, '') = ''
+            UNION ALL SELECT fila, 'dni', dni, 'DNI obligatorio con longitud minima 6.' FROM Datos WHERE LEN(ISNULL(dni, '')) < 6
+            UNION ALL SELECT fila, 'estado', estado, 'Estado debe ser 0 o 1.' FROM Datos WHERE TRY_CONVERT(int, estado) IS NULL OR TRY_CONVERT(int, estado) NOT IN (0, 1)
+        )
+        INSERT INTO Importacion.ErrorImportacion (lote_id, fila, campo, valor, mensaje)
+        SELECT @LoteId, fila, campo, valor, mensaje FROM Errores;
+
+        DECLARE @Cambios TABLE (accion varchar(10));
+
+        ;WITH Datos AS (
+            SELECT fila,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColApellido) AS apellido,
+                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColDni) AS dni,
+                TRY_CONVERT(int, Importacion.fn_ValorCsvLinea(linea, @Separador, @ColEstado)) AS estado
+            FROM Importacion.CsvLinea
+            WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos
+        ), Validado AS (
+            SELECT * FROM Datos D WHERE NOT EXISTS (SELECT 1 FROM Importacion.ErrorImportacion E WHERE E.lote_id = @LoteId AND E.fila = D.fila)
+        )
+        MERGE Personal.GuardaParque AS Target
+        USING Validado AS Source
+        ON Target.dni = Source.dni
+        WHEN MATCHED THEN UPDATE SET nombre = Source.nombre, apellido = Source.apellido, estado = Source.estado
+        WHEN NOT MATCHED THEN INSERT (nombre, apellido, dni, estado) VALUES (Source.nombre, Source.apellido, Source.dni, Source.estado)
+        OUTPUT $action INTO @Cambios;
+
+        DECLARE @RegistrosValidos int = (SELECT COUNT(*) FROM @Cambios);
+        DECLARE @RegistrosInsertados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'INSERT');
+        DECLARE @RegistrosActualizados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'UPDATE');
+
+        EXEC Importacion.usp_FinalizarLoteImportacionCSV @LoteId, @RegistrosValidos, @RegistrosInsertados, @RegistrosActualizados, 'Importacion CSV de guardaparques finalizada.';
+    END TRY
+    BEGIN CATCH
+        UPDATE Importacion.LoteImportacion SET fecha_fin = SYSDATETIME(), estado = 'Error', mensaje = ERROR_MESSAGE(), registros_error = (SELECT COUNT(*) FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId) WHERE id = @LoteId;
+        THROW;
+    END CATCH;
+END;
+GO
+
+CREATE OR ALTER PROCEDURE Importacion.usp_ImportarAtraccionCSV
+    @LoteId int,
+    @RutaArchivo varchar(1000),
+    @MapeoColumnas nvarchar(max),
+    @NombreArchivo varchar(260) = NULL,
+    @Separador varchar(5) = ',',
+    @PrimeraFilaDatos int = 2,
+    @TipoArchivo varchar(10) = 'CSV',
+    @NombreHoja varchar(128) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+        EXEC Importacion.usp_ValidarLoteImportacionCSV @LoteId, @RutaArchivo, @NombreArchivo, 'Atraccion';
+        IF UPPER(@TipoArchivo) IN ('XLS', 'XLSX')
+            EXEC Importacion.usp_CargarExcelLineasDesdeArchivo @LoteId, @RutaArchivo, @NombreHoja, @Separador, @PrimeraFilaDatos;
+        ELSE
+            EXEC Importacion.usp_CargarCsvLineasDesdeArchivo @LoteId, @RutaArchivo, @Separador, @PrimeraFilaDatos;
+
+        DECLARE @ColNombre int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.nombre'));
+        DECLARE @ColDescripcion int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.descripcion'));
+        DECLARE @ColDuracion int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.duracion'));
+        DECLARE @ColCupo int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.cupo_maximo'));
+        DECLARE @ColCosto int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.costo'));
+        DECLARE @ColCodigoParque int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.CodigoParque'));
+
+        IF @ColNombre IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'nombre', NULL, 'Falta mapear nombre.';
+        IF @ColDuracion IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'duracion', NULL, 'Falta mapear duracion.';
+        IF @ColCupo IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'cupo_maximo', NULL, 'Falta mapear cupo_maximo.';
+        IF @ColCosto IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'costo', NULL, 'Falta mapear costo.';
+        IF @ColCodigoParque IS NULL EXEC Importacion.usp_RegistrarErrorImportacion @LoteId, NULL, 'CodigoParque', NULL, 'Falta mapear CodigoParque.';
+        IF EXISTS (SELECT 1 FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId AND fila IS NULL) RAISERROR('ERROR: El mapeo de columnas esta incompleto.', 16, 1);
+
+        ;WITH Datos AS (
+            SELECT C.fila,
+                Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColDescripcion) AS descripcion,
+                Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColDuracion) AS duracion,
+                Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColCupo) AS cupo_maximo,
+                Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColCosto) AS costo,
+                Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColCodigoParque) AS CodigoParque,
+                P.id AS parque_id
+            FROM Importacion.CsvLinea C
+            LEFT JOIN Parques.Parque P ON P.Codigo = Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColCodigoParque)
+            WHERE C.lote_id = @LoteId AND C.fila >= @PrimeraFilaDatos
+        ), Errores AS (
+            SELECT fila, 'nombre' AS campo, nombre AS valor, 'Nombre obligatorio.' AS mensaje FROM Datos WHERE ISNULL(nombre, '') = ''
+            UNION ALL SELECT fila, 'duracion', duracion, 'Duracion debe ser un valor TIME valido.' FROM Datos WHERE TRY_CONVERT(time, duracion) IS NULL
+            UNION ALL SELECT fila, 'cupo_maximo', cupo_maximo, 'cupo_maximo debe ser mayor a 0.' FROM Datos WHERE TRY_CONVERT(int, cupo_maximo) IS NULL OR TRY_CONVERT(int, cupo_maximo) <= 0
+            UNION ALL SELECT fila, 'costo', costo, 'costo debe ser mayor o igual a 0.' FROM Datos WHERE TRY_CONVERT(decimal(18,2), costo) IS NULL OR TRY_CONVERT(decimal(18,2), costo) < 0
+            UNION ALL SELECT fila, 'CodigoParque', CodigoParque, 'CodigoParque no existe en Parques.Parque.' FROM Datos WHERE parque_id IS NULL
+        )
+        INSERT INTO Importacion.ErrorImportacion (lote_id, fila, campo, valor, mensaje)
+        SELECT @LoteId, fila, campo, valor, mensaje FROM Errores;
+
+        DECLARE @Cambios TABLE (accion varchar(10));
+
+        ;WITH Datos AS (
+            SELECT C.fila,
+                Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColDescripcion) AS descripcion,
+                TRY_CONVERT(time, Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColDuracion)) AS duracion,
+                TRY_CONVERT(int, Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColCupo)) AS cupo_maximo,
+                TRY_CONVERT(decimal(18,2), Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColCosto)) AS costo,
+                P.id AS parque_id
+            FROM Importacion.CsvLinea C
+            LEFT JOIN Parques.Parque P ON P.Codigo = Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColCodigoParque)
+            WHERE C.lote_id = @LoteId AND C.fila >= @PrimeraFilaDatos
+        ), Validado AS (
+            SELECT * FROM Datos D WHERE NOT EXISTS (SELECT 1 FROM Importacion.ErrorImportacion E WHERE E.lote_id = @LoteId AND E.fila = D.fila)
+        )
+        MERGE Parques.Atraccion AS Target
+        USING Validado AS Source
+        ON Target.nombre = Source.nombre AND Target.parque_id = Source.parque_id
+        WHEN MATCHED THEN UPDATE SET descripcion = Source.descripcion, duracion = Source.duracion, cupo_maximo = Source.cupo_maximo, costo = Source.costo
+        WHEN NOT MATCHED THEN INSERT (nombre, descripcion, duracion, cupo_maximo, costo, parque_id) VALUES (Source.nombre, Source.descripcion, Source.duracion, Source.cupo_maximo, Source.costo, Source.parque_id)
+        OUTPUT $action INTO @Cambios;
+
+        DECLARE @RegistrosValidos int = (SELECT COUNT(*) FROM @Cambios);
+        DECLARE @RegistrosInsertados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'INSERT');
+        DECLARE @RegistrosActualizados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'UPDATE');
+
+        EXEC Importacion.usp_FinalizarLoteImportacionCSV @LoteId, @RegistrosValidos, @RegistrosInsertados, @RegistrosActualizados, 'Importacion CSV de atracciones finalizada.';
+    END TRY
+    BEGIN CATCH
+        UPDATE Importacion.LoteImportacion SET fecha_fin = SYSDATETIME(), estado = 'Error', mensaje = ERROR_MESSAGE(), registros_error = (SELECT COUNT(*) FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId) WHERE id = @LoteId;
+        THROW;
+    END CATCH;
 END;
 GO

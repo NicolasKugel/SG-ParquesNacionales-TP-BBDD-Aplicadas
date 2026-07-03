@@ -1,151 +1,233 @@
-# Entrega Importaciones Masivas y APIs
+# Entrega Importaciones Masivas
 
 ## Objetivo
 
-El modulo agregado permite importar informacion externa desde archivos CSV mediante Stored Procedures, aplicar validaciones, registrar errores por fila, importar parcialmente los registros validos y evitar duplicados con logica de upsert.
+El modulo permite importar datos CSV y Excel de entidades relevantes mediante Stored Procedures. Cada SP recibe la ruta del archivo, carga sus lineas en una tabla intermedia, interpreta las columnas con un mapeo JSON, valida datos, registra errores por fila y aplica upsert sobre la entidad destino.
 
-Tambien incorpora Stored Procedures para consumir APIs por URL y registrar la respuesta en la base de datos.
+El uso de SQL dinamico queda acotado a los casos necesarios: `OPENROWSET(BULK...)` para CSV y `OPENROWSET` con ACE OLEDB para Excel requieren que la ruta del archivo sea parte de una sentencia dinamica.
 
-## Archivos Procesados
+## Objetos Principales
 
-### Areas protegidas por jurisdiccion
+- `Importacion.LoteImportacion`: cabecera de cada importacion.
+- `Importacion.CsvLineaTrabajo`: tabla tecnica usada por `BULK INSERT` para cargar lineas crudas.
+- `Importacion.CsvLinea`: lineas crudas asociadas a un lote.
+- `Importacion.ErrorImportacion`: errores detectados por lote y fila.
+- `Importacion.fn_ValorCsvLinea`: obtiene el valor de una columna segun su posicion dentro de una linea.
+- `Importacion.fn_CantidadColumnasCsvLinea`: cuenta columnas de una linea segun el separador.
+- `Importacion.usp_CargarCsvLineasDesdeArchivo`: helper que carga el archivo en `CsvLinea`.
+- `Importacion.usp_CargarExcelLineasDesdeArchivo`: helper que lee Excel con `Microsoft.ACE.OLEDB.16.0` y carga sus filas en `CsvLinea`.
 
-- Archivo: `importaciones/aprn_g_ap_juris_2025.csv`
-- Formato: CSV separado por `;`
-- Fuente: dataset publico sobre areas protegidas por jurisdiccion.
-- Procedimiento: `Importacion.sp_ImportarAreasProtegidasCSV`
-- Tabla destino: `Importacion.AreaProtegidaJurisdiccion`
-- Clave de upsert: `jurisdiccion`
-- Regla especial: la fila `Total` se registra como error no importable porque es un agregado del dataset, no una jurisdiccion individual.
+## SPs De Importacion CSV
 
-### Visitas residentes y no residentes
+Todos los SP de entidad usan esta firma:
 
-- Archivo: `importaciones/visitas-residentes-y-no-residentes.csv`
-- Formato: CSV separado por `,`
-- Fuente: dataset publico turistico sobre visitas historicas de residentes y no residentes.
-- Procedimiento: `Importacion.sp_ImportarVisitasTuristicasCSV`
-- Tabla destino: `Importacion.VisitaTuristicaHistorica`
-- Clave de upsert: `indice_tiempo + origen_visitantes`
-- Regla historica: se mantiene un registro por periodo y origen. Al reimportar el mismo periodo se actualiza, no se duplica.
+```sql
+@LoteId int,
+@RutaArchivo varchar(1000),
+@MapeoColumnas nvarchar(max),
+@NombreArchivo varchar(260) = NULL,
+@Separador varchar(5) = ',',
+@PrimeraFilaDatos int = 2,
+@TipoArchivo varchar(10) = 'CSV',
+@NombreHoja varchar(128) = NULL
+```
 
-## Objetos Creados
+SPs disponibles:
 
-El script `scripts/04-Importaciones.sql` crea el schema `Importacion` y los siguientes objetos:
+- `Importacion.usp_ImportarParqueCSV`
+- `Importacion.usp_ImportarVisitanteCSV`
+- `Importacion.usp_ImportarAtraccionCSV`
+- `Importacion.usp_ImportarGuiaCSV`
+- `Importacion.usp_ImportarGuardaParqueCSV`
 
-- `Importacion.LoteImportacion`: cabecera de cada ejecucion de importacion.
-- `Importacion.ErrorImportacion`: errores de formato, datos faltantes o filas no importables.
-- `Importacion.StageAreaProtegidaJurisdiccion`: tabla temporal persistente para carga cruda del CSV de areas protegidas.
-- `Importacion.AreaProtegidaJurisdiccion`: tabla final normalizada.
-- `Importacion.StageVisitaTuristica`: tabla temporal persistente para carga cruda del CSV de visitas.
-- `Importacion.VisitaTuristicaHistorica`: tabla final historica.
-- `Importacion.ApiConsulta`: registro de llamadas a APIs y respuesta cruda.
-- `Importacion.ApiCotizacion`: cotizaciones parseadas desde APIs JSON compatibles.
-- `Importacion.sp_RegistrarErrorImportacion`: alta centralizada de errores.
-- `Importacion.sp_ImportarAreasProtegidasCSV`: importacion y upsert del dataset de areas protegidas.
-- `Importacion.sp_ImportarVisitasTuristicasCSV`: importacion y upsert del dataset de visitas turisticas.
-- `Importacion.sp_ConsumirApi`: consumo generico de API por URL.
-- `Importacion.sp_RegistrarCotizacionDesdeApi`: consumo de API y parseo de cotizaciones desde JSON con nodo `results`.
+## Flujo De Uso
+
+1. Crear un lote en `Importacion.LoteImportacion`.
+2. Ejecutar el SP de la entidad indicando `@RutaArchivo` y `@MapeoColumnas`.
+3. El SP carga el archivo en `Importacion.CsvLinea` usando el helper CSV o Excel segun `@TipoArchivo`.
+4. El SP valida, registra errores e importa los registros validos.
+5. Consultar `Importacion.LoteImportacion` y `Importacion.ErrorImportacion`.
+
+Ejemplo:
+
+```sql
+INSERT INTO Importacion.LoteImportacion (dataset, nombre_archivo, ruta_archivo)
+VALUES ('Visitante', 'visitantes.csv', 'C:\SQLImports\visitantes.csv');
+
+DECLARE @LoteId int = SCOPE_IDENTITY();
+
+EXEC Importacion.usp_ImportarVisitanteCSV
+    @LoteId = @LoteId,
+    @RutaArchivo = 'C:\SQLImports\visitantes.csv',
+    @MapeoColumnas = '{"nombre":1,"apellido":2,"dni":3}',
+    @NombreArchivo = 'visitantes.csv',
+    @Separador = ',',
+    @PrimeraFilaDatos = 2;
+
+SELECT *
+FROM Importacion.LoteImportacion
+WHERE id = @LoteId;
+
+SELECT *
+FROM Importacion.ErrorImportacion
+WHERE lote_id = @LoteParque;
+
+SELECT *
+FROM Importacion.CsvLinea
+WHERE lote_id = @LoteId
+ORDER BY fila;
+
+SELECT TOP 100 *
+FROM <Tabla en donde impacto la importacion>;
+```
+
+Ejemplo Excel:
+
+```sql
+INSERT INTO Importacion.LoteImportacion (dataset, nombre_archivo, ruta_archivo)
+VALUES ('Visitante', 'visitantes.xlsx', 'C:\SQLImports\visitantes.xlsx');
+
+DECLARE @LoteId int = SCOPE_IDENTITY();
+
+EXEC Importacion.usp_ImportarVisitanteCSV
+    @LoteId = @LoteId,
+    @RutaArchivo = 'C:\SQLImports\visitantes.xlsx',
+    @MapeoColumnas = '{"nombre":1,"apellido":2,"dni":3}',
+    @NombreArchivo = 'visitantes.xlsx',
+    @Separador = ',',
+    @PrimeraFilaDatos = 2,
+    @TipoArchivo = 'XLSX',
+    @NombreHoja = 'Hoja1';
+
+SELECT *
+FROM Importacion.LoteImportacion
+WHERE id = @LoteId;
+
+SELECT *
+FROM Importacion.ErrorImportacion
+WHERE lote_id = @LoteId;
+
+SELECT *
+FROM Importacion.CsvLinea
+WHERE lote_id = @LoteId
+ORDER BY fila;
+
+SELECT TOP 100 *
+FROM <Tabla en donde Impacta la importacion>;
+```
+
+## Mapeos Esperados (La numeración de las columnas puede variar)
+El atributo que quede mapeado con el número de columna se va a intentar importar, esto implica que la importación falle
+por validaciones definidas en la tabla para el atributo.
+
+Parque:
+
+```json
+{"Codigo":1,"nombre":2,"ubicacion":3,"tipo_parque":4,"superficie_ha":5}
+```
+
+Visitante:
+
+```json
+{"nombre":1,"apellido":2,"dni":3}
+```
+
+Atraccion:
+
+```json
+{"nombre":1,"descripcion":2,"duracion":3,"cupo_maximo":4,"costo":5,"CodigoParque":6}
+```
+
+Guia:
+
+```json
+{"nombre":1,"apellido":2,"dni":3,"titulo":4,"tipo_habilitacion":5,"especialidad":6}
+```
+
+GuardaParque:
+
+```json
+{"nombre":1,"apellido":2,"dni":3,"estado":4}
+```
+
+## Reglas De Upsert
+
+- Parque: `Codigo`.
+- Visitante: `dni`.
+- Guia: `dni`.
+- GuardaParque: `dni`.
+- Atraccion: `nombre + parque_id`, resolviendo `parque_id` por `CodigoParque`.
 
 ## Validaciones
 
-Los procedimientos no abortan toda la importacion ante errores de datos. Primero cargan el archivo crudo a staging, luego registran errores y finalmente importan solo las filas validas.
+- Si falta un atributo obligatorio en el mapeo JSON, el lote queda en error.
+- Si una fila no cumple las reglas de la entidad, se registra en `Importacion.ErrorImportacion`.
+- Si el archivo o una fila tiene una sola columna, se registra error porque no puede mapearse a una entidad.
+- Las filas validas se importan aunque otras filas tengan errores.
 
-Validaciones de areas protegidas:
+## Limitaciones Del Parser CSV
 
-- `jurisdicciones` obligatorio.
-- La fila `Total` no se importa por ser agregada.
-- Campos de cantidad deben convertir a entero.
-- Campos de hectareas y porcentaje deben convertir a decimal.
-- Cantidades, superficies y porcentajes no pueden ser negativos.
-- El valor `-` se interpreta como dato no informado y se guarda como `NULL`.
+El parser implementado es simple y adecuado para el alcance academico del TP. Soporta separadores simples como `,` o `;` y remueve comillas dobles comunes.
 
-Validaciones de visitas turisticas:
+No soporta correctamente separadores dentro de campos entrecomillados, por ejemplo:
 
-- `indice_tiempo` debe convertir a fecha.
-- `origen_visitantes` debe ser `residentes`, `no residentes` o `total`.
-- `visitas` debe ser entero mayor o igual a cero.
-
-## Ejecucion
-
-Orden sugerido:
-
-```sql
-:r scripts/00-CreaBDySCHEMAS.sql
-:r scripts/01-CreaTablas.sql
-:r scripts/02-ABM.sql
-:r scripts/03-logicaNegocio.sql
-:r scripts/04-Importaciones.sql
-:r scripts/testImportaciones.sql
+```csv
+"Juan, Carlos",Perez,35123456
 ```
 
-El archivo `scripts/testImportaciones.sql` usa SQLCMD mode y define la variable `RutaImportaciones` con el valor por defecto `.\importaciones`.
+Para CSVs complejos de produccion se recomienda usar herramientas especializadas como SSIS, Import Wizard avanzado, format files o procesos ETL externos.
 
-## Requisitos Para BULK INSERT
+## Importacion Excel
 
-Los SP de importacion reciben `@NombreArchivo` y `@RutaArchivo`. La ruta debe ser accesible para el servicio de SQL Server, no solo para el usuario de Windows que ejecuta SSMS.
+La importacion Excel usa `Microsoft.ACE.OLEDB.16.0` con `HDR=NO`. Esto significa que la primera fila del Excel se lee como una fila normal, igual que en CSV. Por eso `@PrimeraFilaDatos = 2` saltea encabezados y el mapeo JSON sigue siendo por posicion.
 
-La ruta relativa `.\importaciones` se resuelve desde el contexto del servicio de SQL Server. No necesariamente apunta a la carpeta del proyecto ni a la ubicacion del archivo `.sql` abierto.
+El helper lee el rango `A:AD`, equivalente a un maximo de 30 columnas. Si se necesita importar un Excel con mas columnas, se debe ampliar ese rango en `Importacion.usp_CargarExcelLineasDesdeArchivo`.
 
-Si SQL Server no puede leer la ruta por permisos, OneDrive, espacios o acentos, hay dos alternativas:
+Requisitos para Excel:
 
-- Dar permisos de lectura sobre la carpeta al usuario del servicio SQL Server.
-- Copiar el directorio `importaciones` completo a una carpeta local simple accesible por SQL Server y ajustar `RutaImportaciones`, por ejemplo `C:\BBDD\importaciones`.
+- Driver `Microsoft.ACE.OLEDB.16.0` instalado y visible desde SQL Server.
+- `Ad Hoc Distributed Queries` habilitado.
+- Permisos de lectura para la cuenta del servicio SQL Server sobre la carpeta del archivo.
+- Indicar `@NombreHoja` sin el signo `$`, por ejemplo `Hoja1`.
 
-Los archivos CSV no deben editarse antes de importarlos.
+## Anotaciones sobre como configure el driver Microsoft.ACE.OLEDB.16.0 y Microsoft.ACE.OLEDB.12.0
 
-## Consumo De APIs
-
-El procedimiento `Importacion.sp_ConsumirApi` recibe la URL como parametro. Se documentan dos APIs consumibles desde el modulo:
-
-- API de feriados de Argentina Datos: permite consultar feriados nacionales por anio para aplicar reglas de negocio o reportes por dias especiales.
-- API BCRA de estadisticas monetarias: permite consultar variables monetarias y cotizaciones para conversiones de moneda.
-
-Ejemplo de consumo de feriados:
-
+1. Ver si tengo instalado el driver:
+	1. EXEC master.dbo.sp_enum_oledb_providers;
+2. Nombre del driver: Microsoft.ACE.OLEDB.12.0
+3. Si no se tiene el driver hay que descargarlo desde esta pagina de microsoft:`https://www.microsoft.com/en-us/download/details.aspx?id=54920`
+4. instalado el driver, reiniciar SSMS.
+5. Ejecutar esta query:
 ```sql
-DECLARE @ApiConsultaId int;
-
-EXEC Importacion.sp_ConsumirApi
-    @UrlApi = 'https://api.argentinadatos.com/v1/feriados/2026',
-    @Metodo = 'GET',
-    @ApiConsultaId = @ApiConsultaId OUTPUT;
+SELECT * FROM OPENROWSET(
+	    'Microsoft.ACE.OLEDB.16.0',
+	    'Excel 12.0;Database=C:\SQLImports\TP-BBDD-Aplicadas\telefonia_fija_accesos_provincias.xlsx;HDR=YES',
+	    'SELECT * FROM [hoja1$]'
+	  )
 ```
-
-Ejemplo de consumo de BCRA con registro de cotizaciones:
-
+Si se genera este error:
+```
+Mens. 15281, Nivel 16, Estado 1, Línea 41
+SQL Server blocked access to STATEMENT 'OpenRowset/OpenDatasource' of component 'Ad Hoc Distributed Queries' because this component is turned off as part of the security configuration for this server. A system administrator can enable the use of 'Ad Hoc Distributed Queries' by using sp_configure. For more information about enabling 'Ad Hoc Distributed Queries', search for 'Ad Hoc Distributed Queries' in SQL Server Books Online.
+Hora de finalización: 2026-07-03T01:13:09.2013092-03:00
+```
+Hay que ejecutar estas queries:
 ```sql
-DECLARE @ApiConsultaId int;
-
-EXEC Importacion.sp_RegistrarCotizacionDesdeApi
-    @UrlApi = 'https://api.bcra.gob.ar/estadisticas/v4.0/DatosVariable/4/2026-06-01/2026-06-30',
-    @Moneda = 'USD',
-    @ApiConsultaId = @ApiConsultaId OUTPUT;
+EXEC sp_configure 'show advanced options', 1; RECONFIGURE;
+EXEC sp_configure 'Ad Hoc Distributed Queries', 1; RECONFIGURE;
 ```
-
-Este procedimiento espera una respuesta con un arreglo `results` y campos `fecha` y `valor`.
-
-## Requisitos Para sp_OA
-
-El consumo HTTP desde SQL Server usa `sp_OACreate`, `sp_OAMethod` y `sp_OAGetProperty`. Para ejecutarlo, el servidor debe tener habilitado `Ole Automation Procedures`.
-
-Configuracion habitual, a ejecutar con permisos de administrador:
-
-```sql
-EXEC sp_configure 'show advanced options', 1;
-RECONFIGURE;
-EXEC sp_configure 'Ole Automation Procedures', 1;
-RECONFIGURE;
+Si sigue fallando:
 ```
+1. Vamos al menú izquierdo (Explorador de objetos)
+2. Objetos de servidor -> Servidores Vinculados -> Proveedores -> Entramos a los drivers y habilitamos en inprocess.
+3. Reiniciar SMSS.
+```
+## Rutas Y Permisos
 
-Si la opcion no esta habilitada, los SP de importacion de archivos siguen funcionando, pero los SP de API registraran error o fallaran al intentar invocar `sp_OA*`.
+SQL Server lee archivos desde el servicio de SQL Server, no desde SSMS. Por eso `@RutaArchivo` debe apuntar a una ruta existente y accesible por el usuario del servicio SQL Server.
 
-## Evidencias Esperadas
+Recomendacion practica:
 
-Luego de ejecutar `scripts/testImportaciones.sql` se puede verificar:
-
-- `Importacion.LoteImportacion`: cada importacion con cantidades leidas, validas, insertadas, actualizadas y errores.
-- `Importacion.ErrorImportacion`: filas rechazadas y motivo.
-- `Importacion.AreaProtegidaJurisdiccion`: registros importados sin duplicados por jurisdiccion.
-- `Importacion.VisitaTuristicaHistorica`: historico sin duplicados por periodo y origen.
-- `Importacion.ApiConsulta`: respuesta cruda y estado de cada API consumida.
-- `Importacion.ApiCotizacion`: cotizaciones parseadas cuando la respuesta JSON sea compatible.
+- Mantener los archivos originales en la carpeta `importaciones/` del repositorio.
+- Para ejecutar en SQL Server local, copiar los archivos a una carpeta simple, por ejemplo `C:\SQLImports\TP-BBDD-Aplicadas`.
+- Usar esa ruta absoluta en `@RutaArchivo`.

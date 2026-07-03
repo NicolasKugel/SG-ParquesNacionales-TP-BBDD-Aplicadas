@@ -1,17 +1,13 @@
 /*******************************************************************************
 Fecha: 30/06/2026
 Integrantes: [Nicolas Kugel, Facundo Gargiulo, Valentin Martinez]
-Descripcion: Pruebas del modulo de importaciones masivas y consumo de API.
+Descripcion: Pruebas del modulo de importacion CSV por Stored Procedures.
              Requiere ejecutar antes: 00, 01, 02, 03 y 04-Importaciones.sql.
 
 IMPORTANTE: ejecutar en modo SQLCMD para usar la variable RutaImportaciones.
-
 La ruta relativa .\importaciones se resuelve desde el contexto del servicio de
-SQL Server, no necesariamente desde la ubicacion de este script.
-Si falla BULK INSERT por archivo no encontrado o permisos:
-1. Crear o identificar una carpeta accesible por SQL Server.
-2. Copiar ahi el directorio importaciones completo sin modificar los CSV.
-3. Ajustar RutaImportaciones a esa ubicacion, por ejemplo C:\BBDD\importaciones.
+SQL Server. Si falla por permisos o archivo no encontrado, copiar los CSV a una
+carpeta local simple y ajustar RutaImportaciones.
 *******************************************************************************/
 
 :setvar RutaImportaciones ".\importaciones"
@@ -19,105 +15,105 @@ Si falla BULK INSERT por archivo no encontrado o permisos:
 USE TPBDG5;
 GO
 
-DECLARE @RutaAreas varchar(1000) = '$(RutaImportaciones)\aprn_g_ap_juris_2025.csv';
-DECLARE @RutaVisitas varchar(1000) = '$(RutaImportaciones)\visitas-residentes-y-no-residentes.csv';
-
 PRINT '---------------------------------------------------------';
-PRINT 'TEST I-01: Importacion de areas protegidas por jurisdiccion';
+PRINT 'TEST I-01: Importacion CSV de parques';
 PRINT '---------------------------------------------------------';
 
-EXEC Importacion.sp_ImportarAreasProtegidasCSV
-    @NombreArchivo = 'aprn_g_ap_juris_2025.csv',
-    @RutaArchivo = @RutaAreas;
+INSERT INTO Importacion.LoteImportacion (dataset, nombre_archivo, ruta_archivo)
+VALUES ('Parque', 'parques.csv', '$(RutaImportaciones)\parques.csv');
 
-SELECT TOP 10 * FROM Importacion.AreaProtegidaJurisdiccion ORDER BY jurisdiccion;
-SELECT TOP 5 * FROM Importacion.ErrorImportacion ORDER BY id DESC;
-SELECT TOP 1 * FROM Importacion.LoteImportacion WHERE dataset = 'Areas protegidas por jurisdiccion' ORDER BY id DESC;
-GO
+DECLARE @LoteParque int = SCOPE_IDENTITY();
 
-DECLARE @RutaAreas varchar(1000) = '$(RutaImportaciones)\aprn_g_ap_juris_2025.csv';
-DECLARE @CantidadAntes int = (SELECT COUNT(*) FROM Importacion.AreaProtegidaJurisdiccion);
+EXEC Importacion.usp_ImportarParqueCSV
+    @LoteId = @LoteParque,
+    @RutaArchivo = '$(RutaImportaciones)\parques.csv',
+    @MapeoColumnas = '{"Codigo":1,"nombre":2,"ubicacion":3,"tipo_parque":4,"superficie_ha":5}',
+    @NombreArchivo = 'parques.csv';
 
-PRINT '---------------------------------------------------------';
-PRINT 'TEST I-02: Reimportacion de areas protegidas sin duplicados';
-PRINT '---------------------------------------------------------';
-
-EXEC Importacion.sp_ImportarAreasProtegidasCSV
-    @NombreArchivo = 'aprn_g_ap_juris_2025.csv',
-    @RutaArchivo = @RutaAreas;
-
-SELECT @CantidadAntes AS cantidad_antes,
-       COUNT(*) AS cantidad_despues
-FROM Importacion.AreaProtegidaJurisdiccion;
-
-SELECT TOP 1 registros_insertados, registros_actualizados, registros_error
-FROM Importacion.LoteImportacion
-WHERE dataset = 'Areas protegidas por jurisdiccion'
-ORDER BY id DESC;
-GO
-
-DECLARE @RutaVisitas varchar(1000) = '$(RutaImportaciones)\visitas-residentes-y-no-residentes.csv';
-
-PRINT '---------------------------------------------------------';
-PRINT 'TEST I-03: Importacion de visitas turisticas historicas';
-PRINT '---------------------------------------------------------';
-
-EXEC Importacion.sp_ImportarVisitasTuristicasCSV
-    @NombreArchivo = 'visitas-residentes-y-no-residentes.csv',
-    @RutaArchivo = @RutaVisitas;
-
-SELECT TOP 10 * FROM Importacion.VisitaTuristicaHistorica ORDER BY indice_tiempo, origen_visitantes;
-SELECT TOP 1 * FROM Importacion.LoteImportacion WHERE dataset = 'Visitas residentes y no residentes' ORDER BY id DESC;
-GO
-
-DECLARE @RutaVisitas varchar(1000) = '$(RutaImportaciones)\visitas-residentes-y-no-residentes.csv';
-DECLARE @CantidadAntes int = (SELECT COUNT(*) FROM Importacion.VisitaTuristicaHistorica);
-
-PRINT '---------------------------------------------------------';
-PRINT 'TEST I-04: Reimportacion de visitas sin duplicados';
-PRINT '---------------------------------------------------------';
-
-EXEC Importacion.sp_ImportarVisitasTuristicasCSV
-    @NombreArchivo = 'visitas-residentes-y-no-residentes.csv',
-    @RutaArchivo = @RutaVisitas;
-
-SELECT @CantidadAntes AS cantidad_antes,
-       COUNT(*) AS cantidad_despues
-FROM Importacion.VisitaTuristicaHistorica;
-
-SELECT TOP 1 registros_insertados, registros_actualizados, registros_error
-FROM Importacion.LoteImportacion
-WHERE dataset = 'Visitas residentes y no residentes'
-ORDER BY id DESC;
+SELECT * FROM Parques.Parque WHERE Codigo IN ('PNI', 'PNN');
+SELECT * FROM Importacion.LoteImportacion WHERE id = @LoteParque;
+SELECT * FROM Importacion.ErrorImportacion WHERE lote_id = @LoteParque;
 GO
 
 PRINT '---------------------------------------------------------';
-PRINT 'TEST I-05: Consumo de API de feriados por URL';
+PRINT 'TEST I-02: Importacion CSV de visitantes';
 PRINT '---------------------------------------------------------';
 
-DECLARE @ApiConsultaId int;
+INSERT INTO Importacion.LoteImportacion (dataset, nombre_archivo, ruta_archivo)
+VALUES ('Visitante', 'visitantes.csv', '$(RutaImportaciones)\visitantes.csv');
 
-EXEC Importacion.sp_ConsumirApi
-    @UrlApi = 'https://api.argentinadatos.com/v1/feriados/2026',
-    @Metodo = 'GET',
-    @ApiConsultaId = @ApiConsultaId OUTPUT;
+DECLARE @LoteVisitante int = SCOPE_IDENTITY();
 
-SELECT id, url, metodo, fecha_consulta, estado, codigo_http, LEFT(respuesta, 500) AS respuesta_muestra, mensaje_error
-FROM Importacion.ApiConsulta
-WHERE id = @ApiConsultaId;
+EXEC Importacion.usp_ImportarVisitanteCSV
+    @LoteId = @LoteVisitante,
+    @RutaArchivo = '$(RutaImportaciones)\visitantes.csv',
+    @MapeoColumnas = '{"nombre":1,"apellido":2,"dni":3}',
+    @NombreArchivo = 'visitantes.csv';
+
+SELECT * FROM Ventas.Visitante WHERE dni IN ('35123456', '42123456');
+SELECT * FROM Importacion.LoteImportacion WHERE id = @LoteVisitante;
+SELECT * FROM Importacion.ErrorImportacion WHERE lote_id = @LoteVisitante;
 GO
 
 PRINT '---------------------------------------------------------';
-PRINT 'TEST I-06: Registro de cotizacion desde API BCRA';
+PRINT 'TEST I-03: Importacion CSV de atracciones';
 PRINT '---------------------------------------------------------';
 
-DECLARE @ApiConsultaId int;
+INSERT INTO Importacion.LoteImportacion (dataset, nombre_archivo, ruta_archivo)
+VALUES ('Atraccion', 'atracciones.csv', '$(RutaImportaciones)\atracciones.csv');
 
-EXEC Importacion.sp_RegistrarCotizacionDesdeApi
-    @UrlApi = 'https://api.bcra.gob.ar/estadisticas/v4.0/DatosVariable/4/2026-06-01/2026-06-30',
-    @Moneda = 'USD',
-    @ApiConsultaId = @ApiConsultaId OUTPUT;
+DECLARE @LoteAtraccion int = SCOPE_IDENTITY();
 
-SELECT * FROM Importacion.ApiConsulta WHERE id = @ApiConsultaId;
-SELECT TOP 10 * FROM Importacion.ApiCotizacion WHERE api_consulta_id = @ApiConsultaId ORDER BY fecha DESC;
+EXEC Importacion.usp_ImportarAtraccionCSV
+    @LoteId = @LoteAtraccion,
+    @RutaArchivo = '$(RutaImportaciones)\atracciones.csv',
+    @MapeoColumnas = '{"nombre":1,"descripcion":2,"duracion":3,"cupo_maximo":4,"costo":5,"CodigoParque":6}',
+    @NombreArchivo = 'atracciones.csv';
+
+SELECT A.*
+FROM Parques.Atraccion A
+INNER JOIN Parques.Parque P ON P.id = A.parque_id
+WHERE A.nombre = 'Garganta del Diablo' AND P.Codigo = 'PNI';
+SELECT * FROM Importacion.LoteImportacion WHERE id = @LoteAtraccion;
+SELECT * FROM Importacion.ErrorImportacion WHERE lote_id = @LoteAtraccion;
+GO
+
+PRINT '---------------------------------------------------------';
+PRINT 'TEST I-04: Importacion CSV de guias';
+PRINT '---------------------------------------------------------';
+
+INSERT INTO Importacion.LoteImportacion (dataset, nombre_archivo, ruta_archivo)
+VALUES ('Guia', 'guias.csv', '$(RutaImportaciones)\guias.csv');
+
+DECLARE @LoteGuia int = SCOPE_IDENTITY();
+
+EXEC Importacion.usp_ImportarGuiaCSV
+    @LoteId = @LoteGuia,
+    @RutaArchivo = '$(RutaImportaciones)\guias.csv',
+    @MapeoColumnas = '{"nombre":1,"apellido":2,"dni":3,"titulo":4,"tipo_habilitacion":5,"especialidad":6}',
+    @NombreArchivo = 'guias.csv';
+
+SELECT * FROM Personal.Guia WHERE dni IN ('30111222', '30222333');
+SELECT * FROM Importacion.LoteImportacion WHERE id = @LoteGuia;
+SELECT * FROM Importacion.ErrorImportacion WHERE lote_id = @LoteGuia;
+GO
+
+PRINT '---------------------------------------------------------';
+PRINT 'TEST I-05: Importacion CSV de guardaparques';
+PRINT '---------------------------------------------------------';
+
+INSERT INTO Importacion.LoteImportacion (dataset, nombre_archivo, ruta_archivo)
+VALUES ('GuardaParque', 'guardaparques.csv', '$(RutaImportaciones)\guardaparques.csv');
+
+DECLARE @LoteGuardaParque int = SCOPE_IDENTITY();
+
+EXEC Importacion.usp_ImportarGuardaParqueCSV
+    @LoteId = @LoteGuardaParque,
+    @RutaArchivo = '$(RutaImportaciones)\guardaparques.csv',
+    @MapeoColumnas = '{"nombre":1,"apellido":2,"dni":3,"estado":4}',
+    @NombreArchivo = 'guardaparques.csv';
+
+SELECT * FROM Personal.GuardaParque WHERE dni IN ('28765432', '29876543');
+SELECT * FROM Importacion.LoteImportacion WHERE id = @LoteGuardaParque;
+SELECT * FROM Importacion.ErrorImportacion WHERE lote_id = @LoteGuardaParque;
 GO

@@ -1,27 +1,31 @@
 /*******************************************************************************
-                       UNIVERSIDAD NACIONAL DE LA MATANZA 
-Integrantes: [Nicol·s Kugel, Facundo Gargiulo, Valentin Martinez]
-DescripciÛn:  Creacion de Base de datos y Schemas
+                       UNIVERSIDAD NACIONAL DE LA MATANZA
+Integrantes: [Nicol√°s Kugel, Facundo Gargiulo, Valentin Martinez]
+Descripci√≥n:  Creacion de Base de datos y Schemas
 *******************************************************************************/
-USE master
+USE master;
 GO
+
 IF EXISTS (SELECT * FROM sys.databases WHERE name = 'TPBDG5')
 BEGIN
+    ALTER DATABASE TPBDG5 SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
     DROP DATABASE TPBDG5;
 END
 GO
-    CREATE DATABASE TPBDG5;
+
+CREATE DATABASE TPBDG5;
 GO
 
 USE TPBDG5;
-
 GO
 
 CREATE SCHEMA Personal;
 GO
 CREATE SCHEMA Concesiones;
-GO              
+GO
 CREATE SCHEMA Parques;
 GO
 CREATE SCHEMA Ventas;
+GO
+CREATE SCHEMA Importacion;
 GO
