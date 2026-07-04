@@ -1,8 +1,8 @@
 /*******************************************************************************
 Fecha: 24/06/2026
-Integrantes: [Nicolás Kugel, Facundo Gargiulo, Valentin Martinez]
-Descripción: Entrega 8 - Implementación de Cifrado Simétrico para Datos Sensibles.
-             Crea Master Key, Certificado, Clave Simétrica y adapta la estructura 
+Integrantes: [Nicolï¿½s Kugel, Facundo Gargiulo, Valentin Martinez]
+Descripciï¿½n: Entrega 8 - Implementaciï¿½n de Cifrado Simï¿½trico para Datos Sensibles.
+             Crea Master Key, Certificado, Clave Simï¿½trica y adapta la estructura 
              de Ventas.Visitante junto con su SP ABM Seguro.
 *******************************************************************************/
 
@@ -13,7 +13,7 @@ GO
 -- 1. INFRAESTRUCTURA DE CIFRADO DE SQL SERVER
 -- =============================================================================
 
--- Creamos la Clave Maestra de la Base de Datos con su contraseña (si no existe)
+-- Creamos la Clave Maestra de la Base de Datos con su contraseï¿½a (si no existe)
 IF NOT EXISTS (SELECT * FROM sys.symmetric_keys WHERE name = '##MS_DatabaseMasterKey##')
 BEGIN
     CREATE MASTER KEY ENCRYPTION BY PASSWORD = 'Unlam_Super_Password_2026!';
@@ -27,7 +27,7 @@ BEGIN
 END
 GO
 
--- Creamos la Clave Simétrica vinculada y protegida por el Certificado
+-- Creamos la Clave Simï¿½trica vinculada y protegida por el Certificado
 IF NOT EXISTS (SELECT * FROM sys.symmetric_keys WHERE name = 'ClaveSimetricaDNI')
 BEGIN
     CREATE SYMMETRIC KEY ClaveSimetricaDNI
@@ -37,7 +37,7 @@ END
 GO
 
 -- =============================================================================
--- 2. MODIFICACIÓN DE TABLA Y ELIMINACIÓN DE RESTRICCIÓN UNIQUE
+-- 2. MODIFICACIï¿½N DE TABLA Y ELIMINACIï¿½N DE RESTRICCIï¿½N UNIQUE
 -- =============================================================================
 
 -- Agregamos la columna varbinary para el DNI Cifrado (si no existe)
@@ -47,8 +47,8 @@ BEGIN
 END
 GO
 
--- Buscamos el nombre dinámico de la Unique Key del DNI original y la eliminamos
--- para permitir que convivan múltiples filas ofuscadas con el texto '********'
+-- Buscamos el nombre dinï¿½mico de la Unique Key del DNI original y la eliminamos
+-- para permitir que convivan mï¿½ltiples filas ofuscadas con el texto '********'
 DECLARE @ConstraintName NVARCHAR(200);
 SELECT @ConstraintName = name 
 FROM sys.key_constraints 
@@ -63,11 +63,11 @@ GO
 -- =============================================================================
 -- 3. PROCESO ALMACENADO ABM SEGURO (Maneja el cifrado de forma transparente)
 -- =============================================================================
-IF OBJECT_ID('dbo.sp_ABM_Visitante_Seguro', 'P') IS NOT NULL
-    DROP PROCEDURE dbo.sp_ABM_Visitante_Seguro;
+IF OBJECT_ID('dbo.usp_ABM_Visitante_Seguro', 'P') IS NOT NULL
+    DROP PROCEDURE dbo.usp_ABM_Visitante_Seguro;
 GO
 
-CREATE PROCEDURE sp_ABM_Visitante_Seguro
+CREATE PROCEDURE usp_ABM_Visitante_Seguro
     @Accion   CHAR(1),
     @id       INT          = NULL,
     @nombre   VARCHAR(100) = NULL,
@@ -77,7 +77,7 @@ AS
 BEGIN
     SET NOCOUNT ON;
     
-    -- Abrimos la clave para la sesión de ejecución del procedimiento
+    -- Abrimos la clave para la sesiï¿½n de ejecuciï¿½n del procedimiento
     OPEN SYMMETRIC KEY ClaveSimetricaDNI DECRYPTION BY CERTIFICATE CertificadoSeguridadTP;
 
     IF @Accion = 'I'
@@ -98,7 +98,7 @@ BEGIN
         DELETE FROM Ventas.Visitante WHERE id = @id;
     END
 
-    -- Cerramos el canal criptográfico
+    -- Cerramos el canal criptogrï¿½fico
     CLOSE SYMMETRIC KEY ClaveSimetricaDNI;
 END;
 GO
@@ -108,7 +108,7 @@ GO
 -- =============================================================================
 OPEN SYMMETRIC KEY ClaveSimetricaDNI DECRYPTION BY CERTIFICATE CertificadoSeguridadTP;
 
--- Ciframos a los visitantes históricos que aún tengan la columna dni_cifrado como NULL
+-- Ciframos a los visitantes histï¿½ricos que aï¿½n tengan la columna dni_cifrado como NULL
 UPDATE Ventas.Visitante
 SET dni_cifrado = EncryptByKey(Key_GUID('ClaveSimetricaDNI'), dni),
     dni = '********'
@@ -118,7 +118,7 @@ CLOSE SYMMETRIC KEY ClaveSimetricaDNI;
 GO
 
 -- =============================================================================
--- 5. VERIFICACIÓN Y DEMOSTRACIÓN DE DESENCRIPCIÓN (EVIDENCIA)
+-- 5. VERIFICACIï¿½N Y DEMOSTRACIï¿½N DE DESENCRIPCIï¿½N (EVIDENCIA)
 -- =============================================================================
 PRINT '---------------------------------------------------------';
 PRINT 'VISTA DE LA TABLA EN DISCO (DATOS OFUSCADOS Y EN BYTES)';
@@ -126,7 +126,7 @@ PRINT '---------------------------------------------------------';
 SELECT id, nombre, apellido, dni AS DNI_En_Tabla, dni_cifrado FROM Ventas.Visitante;
 
 PRINT '---------------------------------------------------------';
-PRINT 'DESENCRIPCIÓN AL VUELO AUTORIZADA MEDIANTE LA LLAVE';
+PRINT 'DESENCRIPCIï¿½N AL VUELO AUTORIZADA MEDIANTE LA LLAVE';
 PRINT '---------------------------------------------------------';
 OPEN SYMMETRIC KEY ClaveSimetricaDNI DECRYPTION BY CERTIFICATE CertificadoSeguridadTP;
 

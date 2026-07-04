@@ -16,7 +16,7 @@ GO
 -- ==========================================
 -- ABM: PARQUE
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_ABM_Parque
+CREATE OR ALTER PROCEDURE usp_ABM_Parque
     @Accion        CHAR(1),
     @id            INT           = NULL,
     @Codigo        VARCHAR(20)   = NULL,
@@ -63,7 +63,7 @@ GO
 -- ==========================================
 -- ABM: GUIA
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_ABM_Guia
+CREATE OR ALTER PROCEDURE usp_ABM_Guia
     @Accion            CHAR(1),
     @id                INT          = NULL,
     @nombre            VARCHAR(100) = NULL,
@@ -108,12 +108,7 @@ GO
 -- ==========================================
 -- ABM: CONCESION
 -- ==========================================
-IF OBJECT_ID('dbo.sp_ABM_Concesion', 'P') IS NOT NULL
-BEGIN
-    DROP PROCEDURE dbo.sp_ABM_Concesion;
-END
-GO
-CREATE PROCEDURE sp_ABM_Concesion
+CREATE OR ALTER PROCEDURE usp_ABM_Concesion
     @Accion        CHAR(1),
     @id            INT           = NULL,
     @fecha_inicio  DATE          = NULL,
@@ -163,7 +158,7 @@ GO
 -- ==========================================
 -- ABM: TIPO VISITANTE
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_ABM_TipoVisitante
+CREATE OR ALTER PROCEDURE usp_ABM_TipoVisitante
     @Accion      CHAR(1),
     @id          INT          = NULL,
     @descripcion VARCHAR(100) = NULL,
@@ -186,7 +181,7 @@ GO
 -- ==========================================
 -- ABM: ENTRADA
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_ABM_Entrada
+CREATE OR ALTER PROCEDURE usp_ABM_Entrada
     @Accion         CHAR(1),
     @id             INT           = NULL,
     @precio_entrada DECIMAL(18,2) = NULL,
@@ -230,7 +225,7 @@ GO
 -- ==========================================
 -- ABM: EMPRESA
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_ABM_Empresa
+CREATE OR ALTER PROCEDURE usp_ABM_Empresa
     @Accion         CHAR(1),
     @id             INT          = NULL,
     @razon_social   VARCHAR(150) = NULL,
@@ -265,7 +260,7 @@ GO
 -- ==========================================
 -- ABM: GUARDA PARQUE
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_ABM_GuardaParque
+CREATE OR ALTER PROCEDURE usp_ABM_GuardaParque
     @Accion   CHAR(1),
     @id       INT          = NULL,
     @nombre   VARCHAR(100) = NULL,
@@ -313,7 +308,7 @@ GO
 -- ==========================================
 -- ABM: ASIGNACION GUARDA PARQUE
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_ABM_AsignacionGuardaParque
+CREATE OR ALTER PROCEDURE usp_ABM_AsignacionGuardaParque
     @Accion           CHAR(1),
     @id               INT          = NULL,
     @fecha_inicio     DATE         = NULL,
@@ -363,7 +358,7 @@ GO
 -- ==========================================
 -- ABM: ATRACCION
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_ABM_Atraccion
+CREATE OR ALTER PROCEDURE usp_ABM_Atraccion
     @Accion      CHAR(1),
     @id          INT           = NULL,
     @nombre      VARCHAR(100)  = NULL,
@@ -414,7 +409,7 @@ GO
 -- ==========================================
 -- ABM: VISITANTE
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_ABM_Visitante
+CREATE OR ALTER PROCEDURE usp_ABM_Visitante
     @Accion   CHAR(1),
     @id       INT          = NULL,
     @nombre   VARCHAR(100) = NULL,
@@ -454,10 +449,10 @@ GO
 
 -- ==========================================
 -- ABM: ATRACCION GUIA — Modificación y Baja
--- La asignación inicial (Alta) se realiza a través de sp_AsignarGuiaAtraccion
+-- La asignación inicial (Alta) se realiza a través de usp_AsignarGuiaAtraccion
 -- en logicaNegocio.sql, que aplica las validaciones de negocio correspondientes.
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_ABM_AtraccionGuia
+CREATE OR ALTER PROCEDURE usp_ABM_AtraccionGuia
     @Accion           CHAR(1),           -- 'U' Actualizar | 'D' Eliminar
     @id               INT          = NULL,
     @fecha_asignacion DATE         = NULL,
@@ -505,10 +500,10 @@ GO
 
 -- ==========================================
 -- ABM: PAGO CONCESION — Modificación y Baja
--- La carga inicial (Alta) se gestiona a través de sp_RegistrarPagoConcesion
+-- La carga inicial (Alta) se gestiona a través de usp_RegistrarPagoConcesion
 -- en logicaNegocio.sql, que aplica la lógica de negocio del canon mensual.
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_ABM_PagoConcesion
+CREATE OR ALTER PROCEDURE usp_ABM_PagoConcesion
     @Accion       CHAR(1),
     @id           INT           = NULL,
     @fecha_pago   DATE          = NULL,

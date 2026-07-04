@@ -1,30 +1,38 @@
 /*******************************************************************************
                        UNIVERSIDAD NACIONAL DE LA MATANZA 
-Integrantes: [Nicolás Kugel, Facundo Gargiulo, Valentin Martinez]
-Descripción:  Creacion de Base de datos y Schemas
+Integrantes: [Nicolï¿½s Kugel, Facundo Gargiulo, Valentin Martinez]
+Descripciï¿½n:  Creacion de Base de datos y Schemas
 *******************************************************************************/
-USE master
+USE master;
 GO
+
+-- Si la base existe, forzar SINGLE_USER para cortar conexiones activas antes de dropear
 IF EXISTS (SELECT * FROM sys.databases WHERE name = 'TPBDG5')
 BEGIN
-    
     ALTER DATABASE TPBDG5 SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
-    
     DROP DATABASE TPBDG5;
 END
 GO
-    CREATE DATABASE TPBDG5;
+
+CREATE DATABASE TPBDG5;
 GO
 
 USE TPBDG5;
-
 GO
 
-CREATE SCHEMA Personal;
+-- Schemas: validar existencia antes de crear (CREATE SCHEMA debe ir solo en el batch, por eso SQL dinÃ¡mico)
+IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'Personal')
+    EXEC('CREATE SCHEMA Personal');
 GO
-CREATE SCHEMA Concesiones;
-GO              
-CREATE SCHEMA Parques;
+
+IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'Concesiones')
+    EXEC('CREATE SCHEMA Concesiones');
 GO
-CREATE SCHEMA Ventas;
+
+IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'Parques')
+    EXEC('CREATE SCHEMA Parques');
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'Ventas')
+    EXEC('CREATE SCHEMA Ventas');
 GO

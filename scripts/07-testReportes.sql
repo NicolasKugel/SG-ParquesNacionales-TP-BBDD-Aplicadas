@@ -11,13 +11,13 @@ USE TPBDG5;
 GO
 
 -- Datos adicionales para poder mostrar el reporte de Deudores con contenido real
-EXEC sp_ABM_Empresa
+EXEC usp_ABM_Empresa
     @Accion = 'I',
     @razon_social = 'Concesiones del Sur S.A.',
     @cuit = '30-12345678e-9',
     @tipo_actividad = 'Gastronomía';
 
-EXEC sp_ABM_Concesion
+EXEC usp_ABM_Concesion
     @Accion = 'I',
     @fecha_inicio = '2026-01-01',
     @fecha_fin = '2027-01-01',
@@ -25,7 +25,7 @@ EXEC sp_ABM_Concesion
     @empresa_id = 1,
     @parque_id = 1;
 
-EXEC sp_RegistrarPagoConcesion
+EXEC usp_RegistrarPagoConcesion
     @concesion_id = 1,
     @fecha_pago = '2026-02-05',
     @periodo = '2026-01-01',
@@ -36,25 +36,25 @@ GO
 PRINT '---------------------------------------------------------';
 PRINT 'REPORTE 1: Visitas por parque (mensual)';
 PRINT '---------------------------------------------------------';
-EXEC sp_Reporte_VisitasPorParque @TipoPeriodo = 'M', @Anio = NULL;
+EXEC usp_Reporte_VisitasPorParque @TipoPeriodo = 'M', @Anio = NULL;
 
 PRINT '---------------------------------------------------------';
 PRINT 'REPORTE 2: Ingresos por parque (mensual)';
 PRINT '---------------------------------------------------------';
-EXEC sp_Reporte_IngresosPorParque @TipoPeriodo = 'M', @Anio = NULL;
+EXEC usp_Reporte_IngresosPorParque @TipoPeriodo = 'M', @Anio = NULL;
 
 PRINT '---------------------------------------------------------';
 PRINT 'REPORTE 3: Deudores (XML)';
 PRINT '---------------------------------------------------------';
-EXEC sp_Reporte_Deudores;
+EXEC usp_Reporte_Deudores;
 
 PRINT '---------------------------------------------------------';
 PRINT 'REPORTE 4: Matriz de visitas (Pivot mensual)';
 PRINT '---------------------------------------------------------';
-EXEC sp_Reporte_MatrizVisitas @Anio = 2026;
+EXEC usp_Reporte_MatrizVisitas @Anio = 2026;
 
 PRINT '---------------------------------------------------------';
 PRINT 'REPORTE 5: Parques y concesiones (XML)';
 PRINT '---------------------------------------------------------';
-EXEC sp_Reporte_ParquesConcesiones;
+EXEC usp_Reporte_ParquesConcesiones;
 GO

@@ -11,7 +11,7 @@ GO
 -- ==========================================
 -- REPORTE 1: VISITAS POR SEMANA, MES Y AÑO, POR PARQUE
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_Reporte_VisitasPorParque
+CREATE OR ALTER PROCEDURE usp_Reporte_VisitasPorParque
     @TipoPeriodo CHAR(1), -- 'S' Semana, 'M' Mes, 'A' Año
     @Anio INT = NULL
 AS
@@ -48,7 +48,7 @@ GO
 -- ==========================================
 -- REPORTE 2: INGRESOS POR PARQUE POR SEMANA, MES Y AÑO
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_Reporte_IngresosPorParque
+CREATE OR ALTER PROCEDURE usp_Reporte_IngresosPorParque
     @TipoPeriodo CHAR(1), -- 'S' Semana, 'M' Mes, 'A' Año
     @Anio INT = NULL
 AS
@@ -101,7 +101,7 @@ GO
 -- ==========================================
 -- REPORTE 3: DEUDORES (CONCESIONES ATRASADAS) - XML
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_Reporte_Deudores
+CREATE OR ALTER PROCEDURE usp_Reporte_Deudores
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -146,7 +146,7 @@ GO
 -- ==========================================
 -- REPORTE 4: MATRIZ DE VISITAS (PIVOT POR MES Y PARQUE)
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_Reporte_MatrizVisitas
+CREATE OR ALTER PROCEDURE usp_Reporte_MatrizVisitas
     @Anio INT
 AS
 BEGIN
@@ -185,7 +185,7 @@ GO
 -- ==========================================
 -- REPORTE 5: PARQUES Y CONCESIONES - XML
 -- ==========================================
-CREATE OR ALTER PROCEDURE sp_Reporte_ParquesConcesiones
+CREATE OR ALTER PROCEDURE usp_Reporte_ParquesConcesiones
 AS
 BEGIN
     SET NOCOUNT ON;
