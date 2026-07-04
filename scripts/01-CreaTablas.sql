@@ -1,10 +1,5 @@
-USE master
-GO
 USE TPBDG5;
 GO
-
---NO USAR TRIGGERS, NI DOUBLE, obviamente no cursores.
---Atenti con la numeracion de archivos
 
 CREATE TABLE Concesiones.Empresa (
   id int IDENTITY(1,1) PRIMARY KEY,
@@ -24,8 +19,8 @@ CREATE TABLE Concesiones.Concesion (
 
 CREATE TABLE Concesiones.PagoConcesion (
   id int IDENTITY(1,1) PRIMARY KEY,
-  fecha_pago date NULL, -- Día en que se realizó el pago
-  periodo date NOT NULL, -- Período de la concesión a pagar
+  fecha_pago date NULL,
+  periodo date NOT NULL, 
   estado varchar(10) NOT NULL,
   total decimal(18,2) NOT NULL,
   concesion_id int NOT NULL,
@@ -53,7 +48,6 @@ CREATE TABLE Parques.Parque (
   Codigo varchar(20) NOT NULL,
   nombre varchar(100) NOT NULL,
   ubicacion varchar(200) NOT NULL,
- -- precio_entrada decimal(18,2) NOT NULL, tenemos el precio en entrada ¬¬
   tipo_parque char(2) NOT NULL,
   superficie_ha decimal(12,2) NOT NULL,
 );
@@ -63,7 +57,7 @@ CREATE TABLE Personal.GuardaParque (
   nombre varchar(100) NOT NULL,
   apellido varchar(100) NOT NULL,
   dni varchar(15) NOT NULL UNIQUE,
-  estado int NOT NULL -- 1: Activo, 0: Inactivo
+  estado int NOT NULL 
 );
 
 CREATE TABLE Personal.AsignacionGuardaParque (
@@ -129,9 +123,6 @@ CREATE TABLE Ventas.LineaVenta (
 );
 
 
-
--- Foreign Keys
-
 ALTER TABLE Concesiones.Concesion ADD CONSTRAINT FK_Concesion_Empresa
 
     FOREIGN KEY (empresa_id) REFERENCES Concesiones.Empresa (id);
@@ -140,12 +131,9 @@ ALTER TABLE Concesiones.Concesion ADD CONSTRAINT FK_Concesion_Parque
 
     FOREIGN KEY (parque_id) REFERENCES Parques.Parque (id);
 
-
 ALTER TABLE Concesiones.PagoConcesion ADD CONSTRAINT FK_PagoConcesion_Concesion
 
     FOREIGN KEY (concesion_id) REFERENCES Concesiones.Concesion (id);
-
--- Personal.AsignacionGuardaParque
 
 ALTER TABLE Personal.AsignacionGuardaParque ADD CONSTRAINT FK_AsignacionGuardaParque_GuardaParque
 
@@ -155,25 +143,17 @@ ALTER TABLE Personal.AsignacionGuardaParque ADD CONSTRAINT FK_AsignacionGuardaPa
 
     FOREIGN KEY (parque_id) REFERENCES Parques.Parque (id);
 
--- Ventas.Venta
-
 ALTER TABLE Ventas.Venta ADD CONSTRAINT FK_Venta_Visitante
 
     FOREIGN KEY (visitante_id) REFERENCES Ventas.Visitante (id);
-
--- Parques.Entrada
 
 ALTER TABLE Parques.Entrada ADD CONSTRAINT FK_Entrada_Parque
 
     FOREIGN KEY (parque_id) REFERENCES Parques.Parque (id);
 
--- Parques.Atraccion
-
 ALTER TABLE Parques.Atraccion ADD CONSTRAINT FK_Atraccion_Parque
 
     FOREIGN KEY (parque_id) REFERENCES Parques.Parque (id);
-
--- Ventas.LineaVenta
 
 ALTER TABLE Ventas.LineaVenta ADD CONSTRAINT FK_LineaVenta_Venta
 
@@ -191,8 +171,6 @@ ALTER TABLE Ventas.LineaVenta ADD CONSTRAINT FK_LineaVenta_Atraccion
 
     FOREIGN KEY (atraccion_id) REFERENCES Parques.Atraccion (id);
 
-
-
 ALTER TABLE Personal.AtraccionGuia ADD CONSTRAINT FK_AtraccionGuia_Atraccion
 
     FOREIGN KEY (atraccion_id) REFERENCES Parques.Atraccion (id);
@@ -200,9 +178,6 @@ ALTER TABLE Personal.AtraccionGuia ADD CONSTRAINT FK_AtraccionGuia_Atraccion
 ALTER TABLE Personal.AtraccionGuia ADD CONSTRAINT FK_AtraccionGuia_Guia
 
     FOREIGN KEY (guia_id) REFERENCES Personal.Guia (id);
-
-
--- Check Constraints
 
 ALTER TABLE Concesiones.PagoConcesion ADD CONSTRAINT CK_PagoConcesion_Estado
     CHECK (estado IN ('Pagado', 'Atrasado', 'Pendiente'));
