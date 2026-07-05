@@ -1,0 +1,125 @@
+{
+  "Version": 1,
+  "WorkspaceRootPath": "C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\SolutionTP-G5\\",
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{C7743332-9C0B-4CF4-B805-F7BA15A24E57}|Elementos de la soluci\u00F3n{C7743332-9C0B-4CF4-B805-F7BA15A24E57}|C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\06-Reportes.sql||{B5A506EB-11BE-4782-9A18-21265C2CA0B4}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{C7743332-9C0B-4CF4-B805-F7BA15A24E57}|Elementos de la soluci\u00F3n{C7743332-9C0B-4CF4-B805-F7BA15A24E57}|C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\05-SeedDatosMasivos.sql||{B5A506EB-11BE-4782-9A18-21265C2CA0B4}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{C7743332-9C0B-4CF4-B805-F7BA15A24E57}|Elementos de la soluci\u00F3n{C7743332-9C0B-4CF4-B805-F7BA15A24E57}|C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\04-Importaciones.sql||{B5A506EB-11BE-4782-9A18-21265C2CA0B4}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{C7743332-9C0B-4CF4-B805-F7BA15A24E57}|Elementos de la soluci\u00F3n{C7743332-9C0B-4CF4-B805-F7BA15A24E57}|C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\03-logicaNegocio.sql||{B5A506EB-11BE-4782-9A18-21265C2CA0B4}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{C7743332-9C0B-4CF4-B805-F7BA15A24E57}|Elementos de la soluci\u00F3n{C7743332-9C0B-4CF4-B805-F7BA15A24E57}|C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\02-ABM.sql||{B5A506EB-11BE-4782-9A18-21265C2CA0B4}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{C7743332-9C0B-4CF4-B805-F7BA15A24E57}|Elementos de la soluci\u00F3n{C7743332-9C0B-4CF4-B805-F7BA15A24E57}|C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\01-CreaTablas.sql||{B5A506EB-11BE-4782-9A18-21265C2CA0B4}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{C7743332-9C0B-4CF4-B805-F7BA15A24E57}|Elementos de la soluci\u00F3n{C7743332-9C0B-4CF4-B805-F7BA15A24E57}|C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\00-CreaBDySCHEMAS.sql||{B5A506EB-11BE-4782-9A18-21265C2CA0B4}"
+    }
+  ],
+  "DocumentGroupContainers": [
+    {
+      "Orientation": 0,
+      "VerticalTabListWidth": 339,
+      "DocumentGroups": [
+        {
+          "DockedWidth": 200,
+          "SelectedChildIndex": 0,
+          "Children": [
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "06-Reportes.sql - localhost.TPBDG5 (NKG\\nicol (58))",
+              "DocumentMoniker": "C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\06-Reportes.sql",
+              "RelativeDocumentMoniker": "..\\scripts\\06-Reportes.sql",
+              "ToolTip": "C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\06-Reportes.sql - localhost.TPBDG5 (NKG\\nicol (58))",
+              "RelativeToolTip": "..\\scripts\\06-Reportes.sql - localhost.TPBDG5 (NKG\\nicol (58))",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000826|",
+              "WhenOpened": "2026-07-05T06:24:05.541Z",
+              "EditorCaption": " - localhost.TPBDG5 (NKG\\nicol (58))"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "04-Importaciones.sql - localhost.TPBDG5 (NKG\\nicol (75))",
+              "DocumentMoniker": "C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\04-Importaciones.sql",
+              "RelativeDocumentMoniker": "..\\scripts\\04-Importaciones.sql",
+              "ToolTip": "C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\04-Importaciones.sql - localhost.TPBDG5 (NKG\\nicol (75))",
+              "RelativeToolTip": "..\\scripts\\04-Importaciones.sql - localhost.TPBDG5 (NKG\\nicol (75))",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000826|",
+              "WhenOpened": "2026-07-05T05:49:59.248Z",
+              "EditorCaption": " - localhost.TPBDG5 (NKG\\nicol (75))"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "03-logicaNegocio.sql - localhost.TPBDG5 (NKG\\nicol (74))",
+              "DocumentMoniker": "C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\03-logicaNegocio.sql",
+              "RelativeDocumentMoniker": "..\\scripts\\03-logicaNegocio.sql",
+              "ToolTip": "C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\03-logicaNegocio.sql - localhost.TPBDG5 (NKG\\nicol (74))",
+              "RelativeToolTip": "..\\scripts\\03-logicaNegocio.sql - localhost.TPBDG5 (NKG\\nicol (74))",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000826|",
+              "WhenOpened": "2026-07-05T05:49:55.999Z",
+              "EditorCaption": " - localhost.TPBDG5 (NKG\\nicol (74))"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
+              "Title": "02-ABM.sql - localhost.TPBDG5 (NKG\\nicol (72))",
+              "DocumentMoniker": "C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\02-ABM.sql",
+              "RelativeDocumentMoniker": "..\\scripts\\02-ABM.sql",
+              "ToolTip": "C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\02-ABM.sql - localhost.TPBDG5 (NKG\\nicol (72))",
+              "RelativeToolTip": "..\\scripts\\02-ABM.sql - localhost.TPBDG5 (NKG\\nicol (72))",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000826|",
+              "WhenOpened": "2026-07-05T05:49:51.394Z",
+              "EditorCaption": " - localhost.TPBDG5 (NKG\\nicol (72))"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "01-CreaTablas.sql - localhost.TPBDG5 (NKG\\nicol (71))",
+              "DocumentMoniker": "C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\01-CreaTablas.sql",
+              "RelativeDocumentMoniker": "..\\scripts\\01-CreaTablas.sql",
+              "ToolTip": "C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\01-CreaTablas.sql - localhost.TPBDG5 (NKG\\nicol (71))",
+              "RelativeToolTip": "..\\scripts\\01-CreaTablas.sql - localhost.TPBDG5 (NKG\\nicol (71))",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000826|",
+              "WhenOpened": "2026-07-05T05:49:26.987Z",
+              "EditorCaption": " - localhost.TPBDG5 (NKG\\nicol (71))"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "00-CreaBDySCHEMAS.sql - localhost.TPBDG5 (NKG\\nicol (95))",
+              "DocumentMoniker": "C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\00-CreaBDySCHEMAS.sql",
+              "RelativeDocumentMoniker": "..\\scripts\\00-CreaBDySCHEMAS.sql",
+              "ToolTip": "C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\00-CreaBDySCHEMAS.sql - localhost.TPBDG5 (NKG\\nicol (95))",
+              "RelativeToolTip": "..\\scripts\\00-CreaBDySCHEMAS.sql - localhost.TPBDG5 (NKG\\nicol (95))",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000826|",
+              "WhenOpened": "2026-07-05T05:49:18.882Z",
+              "EditorCaption": " - localhost.TPBDG5 (NKG\\nicol (95))"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "05-SeedDatosMasivos.sql - localhost.TPBDG5 (NKG\\nicol (73))",
+              "DocumentMoniker": "C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\05-SeedDatosMasivos.sql",
+              "RelativeDocumentMoniker": "..\\scripts\\05-SeedDatosMasivos.sql",
+              "ToolTip": "C:\\Users\\nicol\\OneDrive\\Documentos\\Universidad\\BBDD aplicadas\\EntregaTPBBDDAplicadas\\SG-ParquesNacionales-TP-BBDD-Aplicadas\\scripts\\05-SeedDatosMasivos.sql - localhost.TPBDG5 (NKG\\nicol (73))*",
+              "RelativeToolTip": "..\\scripts\\05-SeedDatosMasivos.sql - localhost.TPBDG5 (NKG\\nicol (73))*",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000826|",
+              "WhenOpened": "2026-07-05T05:48:33.713Z",
+              "EditorCaption": " - localhost.TPBDG5 (NKG\\nicol (73))"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
