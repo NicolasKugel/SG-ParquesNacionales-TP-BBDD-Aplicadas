@@ -1,7 +1,7 @@
 /*******************************************************************************
 Fecha: 30/06/2026
 Integrantes: [Nicolas Kugel, Facundo Gargiulo, Valentin Martinez]
-Descripcion: Modulo de importacion CSV.
+Descripcion: Modulo de importacion de archivos CSV y Excel.
              Usa lineas crudas, mapeo JSON, control de lotes, errores por fila
              y upsert por entidad. El SQL dinamico queda acotado al BULK INSERT.
 *******************************************************************************/
@@ -9,21 +9,25 @@ Descripcion: Modulo de importacion CSV.
 USE TPBDG5;
 GO
 
-DROP PROCEDURE IF EXISTS Importacion.usp_ImportarParqueCSV;
-DROP PROCEDURE IF EXISTS Importacion.usp_ImportarVisitanteCSV;
-DROP PROCEDURE IF EXISTS Importacion.usp_ImportarAtraccionCSV;
-DROP PROCEDURE IF EXISTS Importacion.usp_ImportarGuiaCSV;
-DROP PROCEDURE IF EXISTS Importacion.usp_ImportarGuardaParqueCSV;
-
-DROP PROCEDURE IF EXISTS Importacion.usp_CargarCsvLineasDesdeArchivo;
-DROP PROCEDURE IF EXISTS Importacion.usp_CargarExcelLineasDesdeArchivo;
+-- Limpieza de nombres anteriores para no dejar SPs obsoletos al reejecutar.
+DROP FUNCTION IF EXISTS Importacion.fn_ValorCsvLinea;
 DROP FUNCTION IF EXISTS Importacion.fn_CantidadColumnasCsvLinea;
 
-DROP FUNCTION IF EXISTS Importacion.fn_ValorCsvLinea;
+DROP PROCEDURE IF EXISTS Importacion.usp_ImportarParqueArchivo;
+DROP PROCEDURE IF EXISTS Importacion.usp_ImportarVisitanteArchivo;
+DROP PROCEDURE IF EXISTS Importacion.usp_ImportarAtraccionArchivo;
+DROP PROCEDURE IF EXISTS Importacion.usp_ImportarGuiaArchivo;
+DROP PROCEDURE IF EXISTS Importacion.usp_ImportarGuardaParqueArchivo;
+
+DROP PROCEDURE IF EXISTS Importacion.usp_CargarLineasDesdeCSV;
+DROP PROCEDURE IF EXISTS Importacion.usp_CargarLineasDesdeExcel;
+DROP FUNCTION IF EXISTS Importacion.fn_CantidadColumnasLineaImportacion;
+
+DROP FUNCTION IF EXISTS Importacion.fn_ValorLineaImportacion;
 DROP FUNCTION IF EXISTS Importacion.fn_ValorCsvGenerico;
 
-DROP PROCEDURE IF EXISTS Importacion.usp_ValidarLoteImportacionCSV;
-DROP PROCEDURE IF EXISTS Importacion.usp_FinalizarLoteImportacionCSV;
+DROP PROCEDURE IF EXISTS Importacion.usp_IniciarLoteImportacionArchivo;
+DROP PROCEDURE IF EXISTS Importacion.usp_FinalizarLoteImportacionArchivo;
 DROP PROCEDURE IF EXISTS Importacion.usp_RegistrarErrorImportacion;
 GO
 
@@ -78,7 +82,7 @@ CREATE TABLE Importacion.ErrorImportacion (
 );
 GO
 
-CREATE OR ALTER FUNCTION Importacion.fn_ValorCsvLinea (
+CREATE OR ALTER FUNCTION Importacion.fn_ValorLineaImportacion (
     @linea nvarchar(1000),
     @separador varchar(5),
     @numero_columna int
@@ -104,7 +108,7 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER FUNCTION Importacion.fn_CantidadColumnasCsvLinea (
+CREATE OR ALTER FUNCTION Importacion.fn_CantidadColumnasLineaImportacion (
     @linea nvarchar(1000),
     @separador varchar(5)
 )
@@ -141,7 +145,7 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE Importacion.usp_ValidarLoteImportacionCSV
+CREATE OR ALTER PROCEDURE Importacion.usp_IniciarLoteImportacionArchivo
     @LoteId int,
     @RutaArchivo varchar(1000),
     @NombreArchivo varchar(260) = NULL,
@@ -174,7 +178,7 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE Importacion.usp_FinalizarLoteImportacionCSV
+CREATE OR ALTER PROCEDURE Importacion.usp_FinalizarLoteImportacionArchivo
     @LoteId int,
     @RegistrosValidos int,
     @RegistrosInsertados int,
@@ -196,7 +200,7 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE Importacion.usp_CargarCsvLineasDesdeArchivo
+CREATE OR ALTER PROCEDURE Importacion.usp_CargarLineasDesdeCSV
     @LoteId int,
     @RutaArchivo varchar(1000),
     @Separador varchar(5) = ',',
@@ -247,14 +251,14 @@ BEGIN
         FROM Importacion.CsvLinea
         WHERE lote_id = @LoteId
           AND fila >= @PrimeraFilaDatos
-          AND Importacion.fn_CantidadColumnasCsvLinea(linea, @Separador) <= 1;
+          AND Importacion.fn_CantidadColumnasLineaImportacion(linea, @Separador) <= 1;
 
         IF NOT EXISTS (
             SELECT 1
             FROM Importacion.CsvLinea
             WHERE lote_id = @LoteId
               AND fila >= @PrimeraFilaDatos
-              AND Importacion.fn_CantidadColumnasCsvLinea(linea, @Separador) > 1
+              AND Importacion.fn_CantidadColumnasLineaImportacion(linea, @Separador) > 1
         )
         BEGIN
             RAISERROR('ERROR: No se pueden importar archivos con una sola columna.', 16, 1);
@@ -270,12 +274,13 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE Importacion.usp_CargarExcelLineasDesdeArchivo
+CREATE OR ALTER PROCEDURE Importacion.usp_CargarLineasDesdeExcel
     @LoteId int,
     @RutaArchivo varchar(1000),
     @NombreHoja varchar(128),
     @Separador varchar(5) = ',',
-    @PrimeraFilaDatos int = 2
+    @PrimeraFilaDatos int = 2,
+    @RangoExcel varchar(20) = 'A:AD'
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -291,61 +296,83 @@ BEGIN
         TRUNCATE TABLE Importacion.CsvLineaTrabajo;
 
         DECLARE @Sql nvarchar(max);
-        DECLARE @HojaRango varchar(300) = REPLACE(@NombreHoja, '''', '''''') + '$A:AD';
+        DECLARE @RangoNormalizado varchar(20) = UPPER(REPLACE(ISNULL(NULLIF(LTRIM(RTRIM(@RangoExcel)), ''), 'A:AD'), ' ', ''));
+        DECLARE @PosicionSeparador int = CHARINDEX(':', @RangoNormalizado);
+
+        IF @PosicionSeparador <= 1 OR @PosicionSeparador = LEN(@RangoNormalizado)
+        BEGIN
+            RAISERROR('ERROR: El rango Excel debe tener formato simple, por ejemplo A:C o A:AD.', 16, 1);
+            RETURN;
+        END;
+
+        DECLARE @ColumnaDesde varchar(5) = LEFT(@RangoNormalizado, @PosicionSeparador - 1);
+        DECLARE @ColumnaHasta varchar(5) = SUBSTRING(@RangoNormalizado, @PosicionSeparador + 1, LEN(@RangoNormalizado));
+        DECLARE @NumeroDesde int = 0;
+        DECLARE @NumeroHasta int = 0;
+        DECLARE @Indice int = 1;
+
+        WHILE @Indice <= LEN(@ColumnaDesde)
+        BEGIN
+            IF ASCII(SUBSTRING(@ColumnaDesde, @Indice, 1)) NOT BETWEEN ASCII('A') AND ASCII('Z')
+            BEGIN
+                RAISERROR('ERROR: El rango Excel solo admite letras de columna.', 16, 1);
+                RETURN;
+            END;
+
+            SET @NumeroDesde = @NumeroDesde * 26 + ASCII(SUBSTRING(@ColumnaDesde, @Indice, 1)) - ASCII('A') + 1;
+            SET @Indice = @Indice + 1;
+        END;
+
+        SET @Indice = 1;
+        WHILE @Indice <= LEN(@ColumnaHasta)
+        BEGIN
+            IF ASCII(SUBSTRING(@ColumnaHasta, @Indice, 1)) NOT BETWEEN ASCII('A') AND ASCII('Z')
+            BEGIN
+                RAISERROR('ERROR: El rango Excel solo admite letras de columna.', 16, 1);
+                RETURN;
+            END;
+
+            SET @NumeroHasta = @NumeroHasta * 26 + ASCII(SUBSTRING(@ColumnaHasta, @Indice, 1)) - ASCII('A') + 1;
+            SET @Indice = @Indice + 1;
+        END;
+
+        IF @NumeroDesde < 1 OR @NumeroHasta < @NumeroDesde OR (@NumeroHasta - @NumeroDesde + 1) > 30
+        BEGIN
+            RAISERROR('ERROR: El rango Excel debe ser ascendente y tener como maximo 30 columnas.', 16, 1);
+            RETURN;
+        END;
+
+        DECLARE @CantidadColumnas int = @NumeroHasta - @NumeroDesde + 1;
+        DECLARE @ExpresionLinea nvarchar(max) = N'';
+        DECLARE @ColumnasNoVacias nvarchar(max) = N'';
+        SET @Indice = 1;
+
+        WHILE @Indice <= @CantidadColumnas
+        BEGIN
+            SET @ExpresionLinea = @ExpresionLinea +
+                CASE WHEN @Indice > 1 THEN N' + @Separador + ' ELSE N'' END +
+                N'ISNULL(CONVERT(nvarchar(500), F' + CONVERT(nvarchar(10), @Indice) + N'), '''')';
+
+            SET @ColumnasNoVacias = @ColumnasNoVacias +
+                CASE WHEN @Indice > 1 THEN N', ' ELSE N'' END +
+                N'CONVERT(nvarchar(500), F' + CONVERT(nvarchar(10), @Indice) + N')';
+
+            SET @Indice = @Indice + 1;
+        END;
+
+        DECLARE @HojaRango varchar(300) = REPLACE(@NombreHoja, '''', '''''') + '$' + @RangoNormalizado;
 
         SET @Sql = N'
             INSERT INTO Importacion.CsvLinea (lote_id, fila, linea)
             SELECT @LoteId,
                    ROW_NUMBER() OVER (ORDER BY (SELECT 1)) AS fila,
-                   LTRIM(RTRIM(
-                       ISNULL(CONVERT(nvarchar(500), F1), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F2), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F3), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F4), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F5), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F6), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F7), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F8), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F9), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F10), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F11), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F12), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F13), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F14), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F15), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F16), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F17), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F18), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F19), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F20), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F21), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F22), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F23), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F24), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F25), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F26), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F27), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F28), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F29), '''') + @Separador +
-                       ISNULL(CONVERT(nvarchar(500), F30), '''')
-                   )) AS linea
+                   LTRIM(RTRIM(' + @ExpresionLinea + N')) AS linea
             FROM OPENROWSET(
-                ''Microsoft.ACE.OLEDB.16.0'',
+                ''Microsoft.ACE.OLEDB.12.0'',
                 ''Excel 12.0;Database=' + REPLACE(@RutaArchivo, '''', '''''') + ';HDR=NO;IMEX=1'',
                 ''SELECT * FROM [' + @HojaRango + ']''
             ) AS ExcelFilas
-            WHERE COALESCE(
-                CONVERT(nvarchar(500), F1), CONVERT(nvarchar(500), F2), CONVERT(nvarchar(500), F3),
-                CONVERT(nvarchar(500), F4), CONVERT(nvarchar(500), F5), CONVERT(nvarchar(500), F6),
-                CONVERT(nvarchar(500), F7), CONVERT(nvarchar(500), F8), CONVERT(nvarchar(500), F9),
-                CONVERT(nvarchar(500), F10), CONVERT(nvarchar(500), F11), CONVERT(nvarchar(500), F12),
-                CONVERT(nvarchar(500), F13), CONVERT(nvarchar(500), F14), CONVERT(nvarchar(500), F15),
-                CONVERT(nvarchar(500), F16), CONVERT(nvarchar(500), F17), CONVERT(nvarchar(500), F18),
-                CONVERT(nvarchar(500), F19), CONVERT(nvarchar(500), F20), CONVERT(nvarchar(500), F21),
-                CONVERT(nvarchar(500), F22), CONVERT(nvarchar(500), F23), CONVERT(nvarchar(500), F24),
-                CONVERT(nvarchar(500), F25), CONVERT(nvarchar(500), F26), CONVERT(nvarchar(500), F27),
-                CONVERT(nvarchar(500), F28), CONVERT(nvarchar(500), F29), CONVERT(nvarchar(500), F30)
-            ) IS NOT NULL;';
+            WHERE COALESCE(' + @ColumnasNoVacias + N') IS NOT NULL;';
 
         EXEC sp_executesql @Sql, N'@LoteId int, @Separador varchar(5)', @LoteId = @LoteId, @Separador = @Separador;
 
@@ -358,14 +385,14 @@ BEGIN
         FROM Importacion.CsvLinea
         WHERE lote_id = @LoteId
           AND fila >= @PrimeraFilaDatos
-          AND Importacion.fn_CantidadColumnasCsvLinea(linea, @Separador) <= 1;
+          AND Importacion.fn_CantidadColumnasLineaImportacion(linea, @Separador) <= 1;
 
         IF NOT EXISTS (
             SELECT 1
             FROM Importacion.CsvLinea
             WHERE lote_id = @LoteId
               AND fila >= @PrimeraFilaDatos
-              AND Importacion.fn_CantidadColumnasCsvLinea(linea, @Separador) > 1
+              AND Importacion.fn_CantidadColumnasLineaImportacion(linea, @Separador) > 1
         )
         BEGIN
             RAISERROR('ERROR: No se pueden importar archivos con una sola columna.', 16, 1);
@@ -381,7 +408,7 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE Importacion.usp_ImportarParqueCSV
+CREATE OR ALTER PROCEDURE Importacion.usp_ImportarParqueArchivo
     @LoteId int,
     @RutaArchivo varchar(1000),
     @MapeoColumnas nvarchar(max),
@@ -389,17 +416,19 @@ CREATE OR ALTER PROCEDURE Importacion.usp_ImportarParqueCSV
     @Separador varchar(5) = ',',
     @PrimeraFilaDatos int = 2,
     @TipoArchivo varchar(10) = 'CSV',
-    @NombreHoja varchar(128) = NULL
+    @NombreHoja varchar(128) = NULL,
+    @RangoExcel varchar(20) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
     BEGIN TRY
-        EXEC Importacion.usp_ValidarLoteImportacionCSV @LoteId, @RutaArchivo, @NombreArchivo, 'Parque';
+        EXEC Importacion.usp_IniciarLoteImportacionArchivo @LoteId, @RutaArchivo, @NombreArchivo, 'Parque';
+        DECLARE @RangoExcelEfectivo varchar(20) = ISNULL(@RangoExcel, 'A:E');
         IF UPPER(@TipoArchivo) IN ('XLS', 'XLSX')
-            EXEC Importacion.usp_CargarExcelLineasDesdeArchivo @LoteId, @RutaArchivo, @NombreHoja, @Separador, @PrimeraFilaDatos;
+            EXEC Importacion.usp_CargarLineasDesdeExcel @LoteId, @RutaArchivo, @NombreHoja, @Separador, @PrimeraFilaDatos, @RangoExcelEfectivo;
         ELSE
-            EXEC Importacion.usp_CargarCsvLineasDesdeArchivo @LoteId, @RutaArchivo, @Separador, @PrimeraFilaDatos;
+            EXEC Importacion.usp_CargarLineasDesdeCSV @LoteId, @RutaArchivo, @Separador, @PrimeraFilaDatos;
 
         DECLARE @ColCodigo int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.Codigo'));
         DECLARE @ColNombre int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.nombre'));
@@ -416,11 +445,11 @@ BEGIN
 
         ;WITH Datos AS (
             SELECT fila,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColCodigo) AS Codigo,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColNombre) AS nombre,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColUbicacion) AS ubicacion,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColTipoParque) AS tipo_parque,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColSuperficie) AS superficie_ha
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColCodigo) AS Codigo,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColUbicacion) AS ubicacion,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColTipoParque) AS tipo_parque,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColSuperficie) AS superficie_ha
             FROM Importacion.CsvLinea
             WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos
         ), Errores AS (
@@ -437,11 +466,11 @@ BEGIN
 
         ;WITH Datos AS (
             SELECT fila,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColCodigo) AS Codigo,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColNombre) AS nombre,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColUbicacion) AS ubicacion,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColTipoParque) AS tipo_parque,
-                TRY_CONVERT(decimal(12,2), Importacion.fn_ValorCsvLinea(linea, @Separador, @ColSuperficie)) AS superficie_ha
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColCodigo) AS Codigo,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColUbicacion) AS ubicacion,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColTipoParque) AS tipo_parque,
+                TRY_CONVERT(decimal(12,2), Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColSuperficie)) AS superficie_ha
             FROM Importacion.CsvLinea
             WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos
         ), Validado AS (
@@ -458,7 +487,7 @@ BEGIN
         DECLARE @RegistrosInsertados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'INSERT');
         DECLARE @RegistrosActualizados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'UPDATE');
 
-        EXEC Importacion.usp_FinalizarLoteImportacionCSV @LoteId, @RegistrosValidos, @RegistrosInsertados, @RegistrosActualizados, 'Importacion CSV de parques finalizada.';
+        EXEC Importacion.usp_FinalizarLoteImportacionArchivo @LoteId, @RegistrosValidos, @RegistrosInsertados, @RegistrosActualizados, 'Importacion de archivo de parques finalizada.';
     END TRY
     BEGIN CATCH
         UPDATE Importacion.LoteImportacion SET fecha_fin = SYSDATETIME(), estado = 'Error', mensaje = ERROR_MESSAGE(), registros_error = (SELECT COUNT(*) FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId) WHERE id = @LoteId;
@@ -467,7 +496,7 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE Importacion.usp_ImportarVisitanteCSV
+CREATE OR ALTER PROCEDURE Importacion.usp_ImportarVisitanteArchivo
     @LoteId int,
     @RutaArchivo varchar(1000),
     @MapeoColumnas nvarchar(max),
@@ -475,17 +504,19 @@ CREATE OR ALTER PROCEDURE Importacion.usp_ImportarVisitanteCSV
     @Separador varchar(5) = ',',
     @PrimeraFilaDatos int = 2,
     @TipoArchivo varchar(10) = 'CSV',
-    @NombreHoja varchar(128) = NULL
+    @NombreHoja varchar(128) = NULL,
+    @RangoExcel varchar(20) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
     BEGIN TRY
-        EXEC Importacion.usp_ValidarLoteImportacionCSV @LoteId, @RutaArchivo, @NombreArchivo, 'Visitante';
+        EXEC Importacion.usp_IniciarLoteImportacionArchivo @LoteId, @RutaArchivo, @NombreArchivo, 'Visitante';
+        DECLARE @RangoExcelEfectivo varchar(20) = ISNULL(@RangoExcel, 'A:C');
         IF UPPER(@TipoArchivo) IN ('XLS', 'XLSX')
-            EXEC Importacion.usp_CargarExcelLineasDesdeArchivo @LoteId, @RutaArchivo, @NombreHoja, @Separador, @PrimeraFilaDatos;
+            EXEC Importacion.usp_CargarLineasDesdeExcel @LoteId, @RutaArchivo, @NombreHoja, @Separador, @PrimeraFilaDatos, @RangoExcelEfectivo;
         ELSE
-            EXEC Importacion.usp_CargarCsvLineasDesdeArchivo @LoteId, @RutaArchivo, @Separador, @PrimeraFilaDatos;
+            EXEC Importacion.usp_CargarLineasDesdeCSV @LoteId, @RutaArchivo, @Separador, @PrimeraFilaDatos;
 
         DECLARE @ColNombre int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.nombre'));
         DECLARE @ColApellido int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.apellido'));
@@ -498,9 +529,9 @@ BEGIN
 
         ;WITH Datos AS (
             SELECT fila,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColNombre) AS nombre,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColApellido) AS apellido,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColDni) AS dni
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColApellido) AS apellido,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColDni) AS dni
             FROM Importacion.CsvLinea
             WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos
         ), Errores AS (
@@ -515,9 +546,9 @@ BEGIN
 
         ;WITH Datos AS (
             SELECT fila,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColNombre) AS nombre,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColApellido) AS apellido,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColDni) AS dni
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColApellido) AS apellido,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColDni) AS dni
             FROM Importacion.CsvLinea
             WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos
         ), Validado AS (
@@ -534,7 +565,7 @@ BEGIN
         DECLARE @RegistrosInsertados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'INSERT');
         DECLARE @RegistrosActualizados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'UPDATE');
 
-        EXEC Importacion.usp_FinalizarLoteImportacionCSV @LoteId, @RegistrosValidos, @RegistrosInsertados, @RegistrosActualizados, 'Importacion CSV de visitantes finalizada.';
+        EXEC Importacion.usp_FinalizarLoteImportacionArchivo @LoteId, @RegistrosValidos, @RegistrosInsertados, @RegistrosActualizados, 'Importacion de archivo de visitantes finalizada.';
     END TRY
     BEGIN CATCH
         UPDATE Importacion.LoteImportacion SET fecha_fin = SYSDATETIME(), estado = 'Error', mensaje = ERROR_MESSAGE(), registros_error = (SELECT COUNT(*) FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId) WHERE id = @LoteId;
@@ -543,7 +574,7 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE Importacion.usp_ImportarGuiaCSV
+CREATE OR ALTER PROCEDURE Importacion.usp_ImportarGuiaArchivo
     @LoteId int,
     @RutaArchivo varchar(1000),
     @MapeoColumnas nvarchar(max),
@@ -551,17 +582,19 @@ CREATE OR ALTER PROCEDURE Importacion.usp_ImportarGuiaCSV
     @Separador varchar(5) = ',',
     @PrimeraFilaDatos int = 2,
     @TipoArchivo varchar(10) = 'CSV',
-    @NombreHoja varchar(128) = NULL
+    @NombreHoja varchar(128) = NULL,
+    @RangoExcel varchar(20) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
     BEGIN TRY
-        EXEC Importacion.usp_ValidarLoteImportacionCSV @LoteId, @RutaArchivo, @NombreArchivo, 'Guia';
+        EXEC Importacion.usp_IniciarLoteImportacionArchivo @LoteId, @RutaArchivo, @NombreArchivo, 'Guia';
+        DECLARE @RangoExcelEfectivo varchar(20) = ISNULL(@RangoExcel, 'A:F');
         IF UPPER(@TipoArchivo) IN ('XLS', 'XLSX')
-            EXEC Importacion.usp_CargarExcelLineasDesdeArchivo @LoteId, @RutaArchivo, @NombreHoja, @Separador, @PrimeraFilaDatos;
+            EXEC Importacion.usp_CargarLineasDesdeExcel @LoteId, @RutaArchivo, @NombreHoja, @Separador, @PrimeraFilaDatos, @RangoExcelEfectivo;
         ELSE
-            EXEC Importacion.usp_CargarCsvLineasDesdeArchivo @LoteId, @RutaArchivo, @Separador, @PrimeraFilaDatos;
+            EXEC Importacion.usp_CargarLineasDesdeCSV @LoteId, @RutaArchivo, @Separador, @PrimeraFilaDatos;
 
         DECLARE @ColNombre int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.nombre'));
         DECLARE @ColApellido int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.apellido'));
@@ -578,12 +611,12 @@ BEGIN
 
         ;WITH Datos AS (
             SELECT fila,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColNombre) AS nombre,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColApellido) AS apellido,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColDni) AS dni,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColTitulo) AS titulo,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColTipoHabilitacion) AS tipo_habilitacion,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColEspecialidad) AS especialidad
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColApellido) AS apellido,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColDni) AS dni,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColTitulo) AS titulo,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColTipoHabilitacion) AS tipo_habilitacion,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColEspecialidad) AS especialidad
             FROM Importacion.CsvLinea
             WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos
         ), Errores AS (
@@ -599,12 +632,12 @@ BEGIN
 
         ;WITH Datos AS (
             SELECT fila,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColNombre) AS nombre,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColApellido) AS apellido,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColDni) AS dni,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColTitulo) AS titulo,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColTipoHabilitacion) AS tipo_habilitacion,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColEspecialidad) AS especialidad
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColApellido) AS apellido,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColDni) AS dni,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColTitulo) AS titulo,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColTipoHabilitacion) AS tipo_habilitacion,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColEspecialidad) AS especialidad
             FROM Importacion.CsvLinea
             WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos
         ), Validado AS (
@@ -621,7 +654,7 @@ BEGIN
         DECLARE @RegistrosInsertados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'INSERT');
         DECLARE @RegistrosActualizados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'UPDATE');
 
-        EXEC Importacion.usp_FinalizarLoteImportacionCSV @LoteId, @RegistrosValidos, @RegistrosInsertados, @RegistrosActualizados, 'Importacion CSV de guias finalizada.';
+        EXEC Importacion.usp_FinalizarLoteImportacionArchivo @LoteId, @RegistrosValidos, @RegistrosInsertados, @RegistrosActualizados, 'Importacion de archivo de guias finalizada.';
     END TRY
     BEGIN CATCH
         UPDATE Importacion.LoteImportacion SET fecha_fin = SYSDATETIME(), estado = 'Error', mensaje = ERROR_MESSAGE(), registros_error = (SELECT COUNT(*) FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId) WHERE id = @LoteId;
@@ -630,7 +663,7 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE Importacion.usp_ImportarGuardaParqueCSV
+CREATE OR ALTER PROCEDURE Importacion.usp_ImportarGuardaParqueArchivo
     @LoteId int,
     @RutaArchivo varchar(1000),
     @MapeoColumnas nvarchar(max),
@@ -638,17 +671,19 @@ CREATE OR ALTER PROCEDURE Importacion.usp_ImportarGuardaParqueCSV
     @Separador varchar(5) = ',',
     @PrimeraFilaDatos int = 2,
     @TipoArchivo varchar(10) = 'CSV',
-    @NombreHoja varchar(128) = NULL
+    @NombreHoja varchar(128) = NULL,
+    @RangoExcel varchar(20) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
     BEGIN TRY
-        EXEC Importacion.usp_ValidarLoteImportacionCSV @LoteId, @RutaArchivo, @NombreArchivo, 'GuardaParque';
+        EXEC Importacion.usp_IniciarLoteImportacionArchivo @LoteId, @RutaArchivo, @NombreArchivo, 'GuardaParque';
+        DECLARE @RangoExcelEfectivo varchar(20) = ISNULL(@RangoExcel, 'A:D');
         IF UPPER(@TipoArchivo) IN ('XLS', 'XLSX')
-            EXEC Importacion.usp_CargarExcelLineasDesdeArchivo @LoteId, @RutaArchivo, @NombreHoja, @Separador, @PrimeraFilaDatos;
+            EXEC Importacion.usp_CargarLineasDesdeExcel @LoteId, @RutaArchivo, @NombreHoja, @Separador, @PrimeraFilaDatos, @RangoExcelEfectivo;
         ELSE
-            EXEC Importacion.usp_CargarCsvLineasDesdeArchivo @LoteId, @RutaArchivo, @Separador, @PrimeraFilaDatos;
+            EXEC Importacion.usp_CargarLineasDesdeCSV @LoteId, @RutaArchivo, @Separador, @PrimeraFilaDatos;
 
         DECLARE @ColNombre int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.nombre'));
         DECLARE @ColApellido int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.apellido'));
@@ -663,10 +698,10 @@ BEGIN
 
         ;WITH Datos AS (
             SELECT fila,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColNombre) AS nombre,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColApellido) AS apellido,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColDni) AS dni,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColEstado) AS estado
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColApellido) AS apellido,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColDni) AS dni,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColEstado) AS estado
             FROM Importacion.CsvLinea
             WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos
         ), Errores AS (
@@ -682,10 +717,10 @@ BEGIN
 
         ;WITH Datos AS (
             SELECT fila,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColNombre) AS nombre,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColApellido) AS apellido,
-                Importacion.fn_ValorCsvLinea(linea, @Separador, @ColDni) AS dni,
-                TRY_CONVERT(int, Importacion.fn_ValorCsvLinea(linea, @Separador, @ColEstado)) AS estado
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColApellido) AS apellido,
+                Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColDni) AS dni,
+                TRY_CONVERT(int, Importacion.fn_ValorLineaImportacion(linea, @Separador, @ColEstado)) AS estado
             FROM Importacion.CsvLinea
             WHERE lote_id = @LoteId AND fila >= @PrimeraFilaDatos
         ), Validado AS (
@@ -702,7 +737,7 @@ BEGIN
         DECLARE @RegistrosInsertados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'INSERT');
         DECLARE @RegistrosActualizados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'UPDATE');
 
-        EXEC Importacion.usp_FinalizarLoteImportacionCSV @LoteId, @RegistrosValidos, @RegistrosInsertados, @RegistrosActualizados, 'Importacion CSV de guardaparques finalizada.';
+        EXEC Importacion.usp_FinalizarLoteImportacionArchivo @LoteId, @RegistrosValidos, @RegistrosInsertados, @RegistrosActualizados, 'Importacion de archivo de guardaparques finalizada.';
     END TRY
     BEGIN CATCH
         UPDATE Importacion.LoteImportacion SET fecha_fin = SYSDATETIME(), estado = 'Error', mensaje = ERROR_MESSAGE(), registros_error = (SELECT COUNT(*) FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId) WHERE id = @LoteId;
@@ -711,7 +746,7 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER PROCEDURE Importacion.usp_ImportarAtraccionCSV
+CREATE OR ALTER PROCEDURE Importacion.usp_ImportarAtraccionArchivo
     @LoteId int,
     @RutaArchivo varchar(1000),
     @MapeoColumnas nvarchar(max),
@@ -719,17 +754,19 @@ CREATE OR ALTER PROCEDURE Importacion.usp_ImportarAtraccionCSV
     @Separador varchar(5) = ',',
     @PrimeraFilaDatos int = 2,
     @TipoArchivo varchar(10) = 'CSV',
-    @NombreHoja varchar(128) = NULL
+    @NombreHoja varchar(128) = NULL,
+    @RangoExcel varchar(20) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
 
     BEGIN TRY
-        EXEC Importacion.usp_ValidarLoteImportacionCSV @LoteId, @RutaArchivo, @NombreArchivo, 'Atraccion';
+        EXEC Importacion.usp_IniciarLoteImportacionArchivo @LoteId, @RutaArchivo, @NombreArchivo, 'Atraccion';
+        DECLARE @RangoExcelEfectivo varchar(20) = ISNULL(@RangoExcel, 'A:F');
         IF UPPER(@TipoArchivo) IN ('XLS', 'XLSX')
-            EXEC Importacion.usp_CargarExcelLineasDesdeArchivo @LoteId, @RutaArchivo, @NombreHoja, @Separador, @PrimeraFilaDatos;
+            EXEC Importacion.usp_CargarLineasDesdeExcel @LoteId, @RutaArchivo, @NombreHoja, @Separador, @PrimeraFilaDatos, @RangoExcelEfectivo;
         ELSE
-            EXEC Importacion.usp_CargarCsvLineasDesdeArchivo @LoteId, @RutaArchivo, @Separador, @PrimeraFilaDatos;
+            EXEC Importacion.usp_CargarLineasDesdeCSV @LoteId, @RutaArchivo, @Separador, @PrimeraFilaDatos;
 
         DECLARE @ColNombre int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.nombre'));
         DECLARE @ColDescripcion int = TRY_CONVERT(int, JSON_VALUE(@MapeoColumnas, '$.descripcion'));
@@ -747,15 +784,15 @@ BEGIN
 
         ;WITH Datos AS (
             SELECT C.fila,
-                Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColNombre) AS nombre,
-                Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColDescripcion) AS descripcion,
-                Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColDuracion) AS duracion,
-                Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColCupo) AS cupo_maximo,
-                Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColCosto) AS costo,
-                Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColCodigoParque) AS CodigoParque,
+                Importacion.fn_ValorLineaImportacion(C.linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorLineaImportacion(C.linea, @Separador, @ColDescripcion) AS descripcion,
+                Importacion.fn_ValorLineaImportacion(C.linea, @Separador, @ColDuracion) AS duracion,
+                Importacion.fn_ValorLineaImportacion(C.linea, @Separador, @ColCupo) AS cupo_maximo,
+                Importacion.fn_ValorLineaImportacion(C.linea, @Separador, @ColCosto) AS costo,
+                Importacion.fn_ValorLineaImportacion(C.linea, @Separador, @ColCodigoParque) AS CodigoParque,
                 P.id AS parque_id
             FROM Importacion.CsvLinea C
-            LEFT JOIN Parques.Parque P ON P.Codigo = Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColCodigoParque)
+            LEFT JOIN Parques.Parque P ON P.Codigo = Importacion.fn_ValorLineaImportacion(C.linea, @Separador, @ColCodigoParque)
             WHERE C.lote_id = @LoteId AND C.fila >= @PrimeraFilaDatos
         ), Errores AS (
             SELECT fila, 'nombre' AS campo, nombre AS valor, 'Nombre obligatorio.' AS mensaje FROM Datos WHERE ISNULL(nombre, '') = ''
@@ -771,14 +808,14 @@ BEGIN
 
         ;WITH Datos AS (
             SELECT C.fila,
-                Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColNombre) AS nombre,
-                Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColDescripcion) AS descripcion,
-                TRY_CONVERT(time, Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColDuracion)) AS duracion,
-                TRY_CONVERT(int, Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColCupo)) AS cupo_maximo,
-                TRY_CONVERT(decimal(18,2), Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColCosto)) AS costo,
+                Importacion.fn_ValorLineaImportacion(C.linea, @Separador, @ColNombre) AS nombre,
+                Importacion.fn_ValorLineaImportacion(C.linea, @Separador, @ColDescripcion) AS descripcion,
+                TRY_CONVERT(time, Importacion.fn_ValorLineaImportacion(C.linea, @Separador, @ColDuracion)) AS duracion,
+                TRY_CONVERT(int, Importacion.fn_ValorLineaImportacion(C.linea, @Separador, @ColCupo)) AS cupo_maximo,
+                TRY_CONVERT(decimal(18,2), Importacion.fn_ValorLineaImportacion(C.linea, @Separador, @ColCosto)) AS costo,
                 P.id AS parque_id
             FROM Importacion.CsvLinea C
-            LEFT JOIN Parques.Parque P ON P.Codigo = Importacion.fn_ValorCsvLinea(C.linea, @Separador, @ColCodigoParque)
+            LEFT JOIN Parques.Parque P ON P.Codigo = Importacion.fn_ValorLineaImportacion(C.linea, @Separador, @ColCodigoParque)
             WHERE C.lote_id = @LoteId AND C.fila >= @PrimeraFilaDatos
         ), Validado AS (
             SELECT * FROM Datos D WHERE NOT EXISTS (SELECT 1 FROM Importacion.ErrorImportacion E WHERE E.lote_id = @LoteId AND E.fila = D.fila)
@@ -794,7 +831,7 @@ BEGIN
         DECLARE @RegistrosInsertados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'INSERT');
         DECLARE @RegistrosActualizados int = (SELECT COUNT(*) FROM @Cambios WHERE accion = 'UPDATE');
 
-        EXEC Importacion.usp_FinalizarLoteImportacionCSV @LoteId, @RegistrosValidos, @RegistrosInsertados, @RegistrosActualizados, 'Importacion CSV de atracciones finalizada.';
+        EXEC Importacion.usp_FinalizarLoteImportacionArchivo @LoteId, @RegistrosValidos, @RegistrosInsertados, @RegistrosActualizados, 'Importacion de archivo de atracciones finalizada.';
     END TRY
     BEGIN CATCH
         UPDATE Importacion.LoteImportacion SET fecha_fin = SYSDATETIME(), estado = 'Error', mensaje = ERROR_MESSAGE(), registros_error = (SELECT COUNT(*) FROM Importacion.ErrorImportacion WHERE lote_id = @LoteId) WHERE id = @LoteId;

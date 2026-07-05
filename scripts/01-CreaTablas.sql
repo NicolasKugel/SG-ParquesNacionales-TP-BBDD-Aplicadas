@@ -53,7 +53,6 @@ CREATE TABLE Parques.Parque (
   Codigo varchar(20) UNIQUE NOT NULL,
   nombre varchar(100) NOT NULL,
   ubicacion varchar(200) NOT NULL,
- -- precio_entrada decimal(18,2) NOT NULL, tenemos el precio en entrada ¬¬
   tipo_parque char(2) NOT NULL,
   superficie_ha decimal(12,2) NOT NULL,
 );

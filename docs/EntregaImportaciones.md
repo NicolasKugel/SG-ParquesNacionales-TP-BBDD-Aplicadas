@@ -12,10 +12,10 @@ El uso de SQL dinamico queda acotado a los casos necesarios: `OPENROWSET(BULK...
 - `Importacion.CsvLineaTrabajo`: tabla tecnica usada por `BULK INSERT` para cargar lineas crudas.
 - `Importacion.CsvLinea`: lineas crudas asociadas a un lote.
 - `Importacion.ErrorImportacion`: errores detectados por lote y fila.
-- `Importacion.fn_ValorCsvLinea`: obtiene el valor de una columna segun su posicion dentro de una linea.
-- `Importacion.fn_CantidadColumnasCsvLinea`: cuenta columnas de una linea segun el separador.
-- `Importacion.usp_CargarCsvLineasDesdeArchivo`: helper que carga el archivo en `CsvLinea`.
-- `Importacion.usp_CargarExcelLineasDesdeArchivo`: helper que lee Excel con `Microsoft.ACE.OLEDB.16.0` y carga sus filas en `CsvLinea`.
+- `Importacion.fn_ValorLineaImportacion`: obtiene el valor de una columna segun su posicion dentro de una linea.
+- `Importacion.fn_CantidadColumnasLineaImportacion`: cuenta columnas de una linea segun el separador.
+- `Importacion.usp_CargarLineasDesdeCSV`: helper que carga el archivo en `CsvLinea`.
+- `Importacion.usp_CargarLineasDesdeExcel`: helper que lee Excel con `Microsoft.ACE.OLEDB.12.0` y carga sus filas en `CsvLinea`.
 
 ## SPs De Importacion CSV
 
@@ -34,11 +34,11 @@ Todos los SP de entidad usan esta firma:
 
 SPs disponibles:
 
-- `Importacion.usp_ImportarParqueCSV`
-- `Importacion.usp_ImportarVisitanteCSV`
-- `Importacion.usp_ImportarAtraccionCSV`
-- `Importacion.usp_ImportarGuiaCSV`
-- `Importacion.usp_ImportarGuardaParqueCSV`
+- `Importacion.usp_ImportarParqueArchivo`
+- `Importacion.usp_ImportarVisitanteArchivo`
+- `Importacion.usp_ImportarAtraccionArchivo`
+- `Importacion.usp_ImportarGuiaArchivo`
+- `Importacion.usp_ImportarGuardaParqueArchivo`
 
 ## Flujo De Uso
 
@@ -89,7 +89,7 @@ VALUES ('Visitante', 'visitantes.xlsx', 'C:\SQLImports\visitantes.xlsx');
 
 DECLARE @LoteId int = SCOPE_IDENTITY();
 
-EXEC Importacion.usp_ImportarVisitanteCSV
+EXEC Importacion.usp_ImportarVisitanteArchivo
     @LoteId = @LoteId,
     @RutaArchivo = 'C:\SQLImports\visitantes.xlsx',
     @MapeoColumnas = '{"nombre":1,"apellido":2,"dni":3}',
@@ -117,7 +117,7 @@ FROM <Tabla en donde Impacta la importacion>;
 ```
 
 ## Mapeos Esperados (La numeración de las columnas puede variar)
-El atributo que quede mapeado con el número de columna se va a intentar importar, esto implica que la importación falle
+El atributo que quede mapeado con el indice de columna se va a intentar importar, esto implica que la importación pueda fallar
 por validaciones definidas en la tabla para el atributo.
 
 Parque:
@@ -167,25 +167,21 @@ GuardaParque:
 
 ## Limitaciones Del Parser CSV
 
-El parser implementado es simple y adecuado para el alcance academico del TP. Soporta separadores simples como `,` o `;` y remueve comillas dobles comunes.
-
 No soporta correctamente separadores dentro de campos entrecomillados, por ejemplo:
 
 ```csv
 "Juan, Carlos",Perez,35123456
 ```
 
-Para CSVs complejos de produccion se recomienda usar herramientas especializadas como SSIS, Import Wizard avanzado, format files o procesos ETL externos.
-
 ## Importacion Excel
 
-La importacion Excel usa `Microsoft.ACE.OLEDB.16.0` con `HDR=NO`. Esto significa que la primera fila del Excel se lee como una fila normal, igual que en CSV. Por eso `@PrimeraFilaDatos = 2` saltea encabezados y el mapeo JSON sigue siendo por posicion.
+La importacion Excel usa `Microsoft.ACE.OLEDB.12.0` (También `Microsoft.ACE.OLEDB.16.0`) con `HDR=NO`. Esto significa que la primera fila del Excel se lee como una fila normal, igual que en CSV. Por eso `@PrimeraFilaDatos = 2` saltea encabezados y el mapeo JSON sigue siendo por posicion.
 
-El helper lee el rango `A:AD`, equivalente a un maximo de 30 columnas. Si se necesita importar un Excel con mas columnas, se debe ampliar ese rango en `Importacion.usp_CargarExcelLineasDesdeArchivo`.
+El helper lee el rango `A:AD`, equivalente a un maximo de 30 columnas. Si se necesita importar un Excel con mas columnas, se debe ampliar ese rango en `Importacion.usp_CargarLineasDesdeExcel`.
 
 Requisitos para Excel:
 
-- Driver `Microsoft.ACE.OLEDB.16.0` instalado y visible desde SQL Server.
+- Driver `Microsoft.ACE.OLEDB.12.0` instalado y visible desde SQL Server.
 - `Ad Hoc Distributed Queries` habilitado.
 - Permisos de lectura para la cuenta del servicio SQL Server sobre la carpeta del archivo.
 - Indicar `@NombreHoja` sin el signo `$`, por ejemplo `Hoja1`.
