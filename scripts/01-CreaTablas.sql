@@ -45,7 +45,7 @@ CREATE TABLE Parques.Atraccion (
 
 CREATE TABLE Parques.Parque (
   id int IDENTITY(1,1) PRIMARY KEY,
-  Codigo varchar(20) NOT NULL,
+  Codigo varchar(20) UNIQUE NOT NULL,
   nombre varchar(100) NOT NULL,
   ubicacion varchar(200) NOT NULL,
   tipo_parque char(2) NOT NULL,

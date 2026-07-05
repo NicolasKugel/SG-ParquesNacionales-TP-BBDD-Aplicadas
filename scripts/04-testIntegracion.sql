@@ -40,7 +40,7 @@ SELECT * FROM Ventas.Visitante WHERE dni = '35123456';
 -- 5. Procesar Venta Transaccional
 EXEC usp_ProcesarVentaTicket
     @punto_venta = 10, @numero = 9991,
-    @forma_pago = 'Tarjeta de Débito', @visitante_id = 1,
+    @forma_pago = 'Tarjeta de débito', @visitante_id = 1,
     @tipo_visitante_id = 1, @entrada_id = 1, @atraccion_id = NULL, @cantidad = 2;
 
 -- [EVIDENCIA 2]: Venta e impacto financiero
